@@ -1,0 +1,1638 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IFC4 RV Viewer</title>
+<style>
+  :root{
+    --paper:#eef1f4; --panel:#f8fafb; --line:#c9d2da; --line-soft:#dde4ea;
+    --ink:#16212e; --ink-2:#53637a; --ink-3:#8494a8;
+    --blue:#1f5fa9; --blue-soft:#dbe7f5; --amber:#a86a12; --red:#a11b1b;
+    --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--sans);font-size:13px;line-height:1.45;color:var(--ink);background:var(--paper);overflow:hidden}
+  button,input,select{font:inherit;color:inherit}
+  button{cursor:pointer}
+  :focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+
+  #app{display:grid;grid-template-columns:300px minmax(0,1fr) 330px;height:100%}
+  aside{background:var(--panel);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  #left{border-right:1px solid var(--line)}
+  #right{border-left:1px solid var(--line)}
+  .scroll{overflow-y:auto;overflow-x:hidden;flex:1;min-height:0}
+
+  .brand{padding:13px 16px 11px;border-bottom:1px solid var(--line)}
+  .brand h1{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em}
+  .brand p{margin:3px 0 0;font-size:11.5px;color:var(--ink-3)}
+
+  .block{padding:12px 16px;border-bottom:1px solid var(--line-soft)}
+  .block h2{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--ink-2)}
+
+  .btn{border:1px solid var(--line);background:#fff;border-radius:3px;padding:6px 10px;font-size:12px;transition:background .12s,border-color .12s}
+  .btn:hover:not(:disabled){background:var(--blue-soft);border-color:var(--blue)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:500}
+  .btn.primary:hover{background:#17497f}
+  .btn-row{display:flex;gap:6px;flex-wrap:wrap}
+  .btn-row .btn{flex:1 1 auto}
+  .muted{font-size:11px;color:var(--ink-3);margin-top:6px}
+
+  .stats{display:grid;grid-template-columns:1fr auto;gap:4px 10px;font-size:12px;margin:0}
+  .stats dt{color:var(--ink-3);margin:0}
+  .stats dd{margin:0;font-family:var(--mono);font-size:11.5px;text-align:right}
+
+  .search,select{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:3px;background:#fff;font-size:12px}
+  input[type=range]{width:100%;accent-color:var(--blue)}
+  label.field{display:block;margin-bottom:8px}
+  label.field>span{display:block;font-size:11.5px;color:var(--ink-2);margin-bottom:3px}
+  .row{display:flex;gap:8px;align-items:center}
+
+  .cls{border-bottom:1px solid var(--line-soft)}
+  .cls-head{display:flex;align-items:center;gap:8px;padding:6px 16px;background:none;border:0;width:100%;text-align:left}
+  .cls-head:hover{background:#eef3f8}
+  .caret{display:inline-block;width:9px;flex:none;color:var(--ink-3);font-size:9px;transition:transform .12s}
+  .cls.open .caret{transform:rotate(90deg)}
+  .cls-head .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+  .cls-head .count{font-family:var(--mono);font-size:11px;color:var(--ink-3);flex:none}
+  .swatch{width:15px;height:15px;flex:none;padding:0;border:1px solid var(--line);border-radius:2px;background:none;cursor:pointer}
+  .swatch::-webkit-color-swatch-wrapper{padding:0}
+  .swatch::-webkit-color-swatch{border:0;border-radius:1px}
+  .eye{flex:none;width:20px;height:20px;border:0;background:none;color:var(--ink-3);font-size:12px;line-height:1;border-radius:2px}
+  .eye:hover{background:#e3eaf1;color:var(--ink)}
+  .eye.off{color:var(--amber)}
+  .cls-items{display:none}
+  .cls.open .cls-items{display:block}
+  .item{display:block;width:100%;text-align:left;border:0;background:none;padding:4px 16px 4px 33px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item:hover{background:#eef3f8}
+  .item.sel{background:var(--blue-soft);box-shadow:inset 2px 0 0 var(--blue)}
+  .item .eid{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-left:6px}
+  .more{padding:4px 16px 8px 33px;font-size:11px;color:var(--ink-3)}
+
+  .legend{margin-top:8px;display:flex;flex-direction:column;gap:3px;max-height:200px;overflow:auto}
+  .legend div{display:flex;align-items:center;gap:7px;font-size:11.5px;cursor:pointer}
+  .legend i{width:11px;height:11px;border-radius:2px;flex:none;border:1px solid rgba(0,0,0,.15)}
+  .legend span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .legend b{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);font-weight:400}
+
+  #stage{position:relative;min-width:0;background:#dfe4e9}
+  #c{display:block;width:100%;height:100%}
+  #toolbar{position:absolute;top:10px;left:10px;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 20px)}
+  #toolbar .btn{background:rgba(255,255,255,.92)}
+  #perf{position:absolute;bottom:10px;left:10px;font-family:var(--mono);font-size:11px;color:var(--ink-2);background:rgba(255,255,255,.82);padding:4px 8px;border-radius:3px;white-space:pre}
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:11px;text-align:center;padding:24px;background:rgba(223,228,233,.95)}
+  #overlay.hidden{display:none}
+  #overlay h3{margin:0;font-size:16px;font-weight:600}
+  #overlay p{margin:0;max-width:52ch;color:var(--ink-2);font-size:12.5px}
+  #overlay.error h3{color:var(--red)}
+  .bar{width:230px;height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--blue);width:0;transition:width .2s}
+  #log{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);text-align:left;white-space:pre-wrap;max-width:70ch;max-height:170px;overflow:auto;margin:0;background:rgba(255,255,255,.6);padding:8px 10px;border-radius:3px}
+  #log:empty{display:none}
+
+  .empty{padding:16px;color:var(--ink-3);font-size:12px}
+  .kv{display:grid;grid-template-columns:76px minmax(0,1fr);gap:5px 10px;font-size:12px;margin:0}
+  .kv dt{color:var(--ink-3);margin:0}
+  .kv dd{margin:0;font-family:var(--mono);font-size:11px;word-break:break-all}
+  .copy{border:0;background:none;color:var(--blue);font-size:11px;padding:0;margin-left:4px;font-family:var(--sans)}
+  .pset{border-bottom:1px solid var(--line-soft)}
+  .pset summary{padding:7px 16px;font-size:12px;font-weight:500;cursor:pointer;list-style:none;display:flex;gap:6px;align-items:center}
+  .pset summary::-webkit-details-marker{display:none}
+  .pset summary:hover{background:#eef3f8}
+  .pset summary::before{content:"›";color:var(--ink-3);display:inline-block;transition:transform .12s}
+  .pset[open] summary::before{transform:rotate(90deg)}
+  .pset table{width:100%;border-collapse:collapse;font-size:11.5px}
+  .pset td{padding:3px 16px;vertical-align:top;border-top:1px solid var(--line-soft)}
+  .pset td:first-child{color:var(--ink-3);width:45%}
+  .pset td:last-child{font-family:var(--mono);font-size:11px;word-break:break-word}
+  @media (max-width:1120px){#app{grid-template-columns:250px minmax(0,1fr) 280px}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <aside id="left">
+    <div class="brand">
+      <h1>IFC4 Reference View</h1>
+      <p id="brandSub">Модель с сервера</p>
+    </div>
+    <div class="scroll">
+      <div class="block" id="modelBlock" hidden>
+        <h2>Модель</h2>
+        <select id="modelSelect"></select>
+      </div>
+
+      <div class="block" id="statsBlock" hidden>
+        <dl class="stats">
+          <dt>Источник</dt><dd id="stFile">—</dd>
+          <dt>Схема</dt><dd id="stSchema">—</dd>
+          <dt>Элементов</dt><dd id="stElems">0</dd>
+          <dt>Треугольников</dt><dd id="stTris">0</dd>
+          <dt>Инстансов</dt><dd id="stInst">0</dd>
+          <dt>Draw calls</dt><dd id="stMeshes">0</dd>
+          <dt>Полупрозрачных</dt><dd id="stGlass">0</dd>
+          <dt>Загрузка</dt><dd id="stTime">—</dd>
+        </dl>
+      </div>
+
+      <div class="block" id="paintBlock" hidden>
+        <h2>Раскраска по параметру</h2>
+        <label class="field">
+          <span>Параметр</span>
+          <select id="propSelect"><option value="">— нет индекса —</option></select>
+        </label>
+        <div class="btn-row">
+          <button class="btn" id="indexBtn">Прочитать свойства</button>
+          <button class="btn" id="resetColors">Сбросить цвета</button>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="block" id="viewBlock" hidden>
+        <h2>Вид</h2>
+        <div class="btn-row">
+          <button class="btn" id="isolateBtn">Изолировать</button>
+          <button class="btn" id="ghostBtn">Приглушить фон</button>
+          <button class="btn" id="showAllBtn">Показать всё</button>
+        </div>
+        <label class="field" id="glassField" style="margin-top:10px" hidden>
+          <span id="glassLabel">Полупрозрачные — 35%</span>
+          <input type="range" id="glassRange" min="5" max="100" value="35">
+        </label>
+        <div class="btn-row" id="glassRow" hidden>
+          <button class="btn" id="opaqueBtn">Сделать непрозрачными</button>
+        </div>
+        <div class="btn-row" style="margin-top:6px">
+          <button class="btn" id="exportBtn">Сохранить схему</button>
+          <button class="btn" id="importBtn">Загрузить схему</button>
+          <input type="file" id="importInput" accept=".json" hidden>
+        </div>
+      </div>
+
+      <div class="block" id="searchBlock" hidden>
+        <input class="search" id="search" placeholder="Поиск по имени или GlobalId">
+      </div>
+
+      <div id="tree"></div>
+
+      <div class="block" id="adminBlock">
+        <h2>Подготовка</h2>
+        <div class="btn-row">
+          <button class="btn" id="openBtn">Открыть .ifc с диска</button>
+          <input type="file" id="fileInput" accept=".ifc,.IFC,.rvpack" hidden>
+        </div>
+        <div class="btn-row" style="margin-top:6px">
+          <button class="btn" id="packBtn" disabled>Собрать .rvpack</button>
+          <button class="btn" id="checkBtn">Окружение</button>
+        </div>
+        <div class="muted">Пакет кладётся на сервер вместо .ifc — посетители получают уже разобранную геометрию.</div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="c"></canvas>
+    <div id="toolbar" hidden>
+      <button class="btn" id="fitBtn">Вписать</button>
+      <button class="btn" id="axisBtn">Ось вверх: Z</button>
+      <button class="btn" id="sideBtn">Грани: лицевые</button>
+    </div>
+    <div id="perf" hidden></div>
+    <div id="overlay">
+      <h3>Загрузка</h3>
+      <p>Ищем модель на сервере.</p>
+      <pre id="log"></pre>
+    </div>
+  </main>
+
+  <aside id="right">
+    <div class="brand">
+      <h1>Элемент</h1>
+      <p id="selHint">Кликните по геометрии</p>
+    </div>
+    <div class="scroll" id="inspector"><div class="empty">Ничего не выбрано.</div></div>
+  </aside>
+</div>
+
+<!-- ==================== ПАРСЕР IFC (нужен только при подготовке) ==================== -->
+<script id="parserSrc" type="text/plain">
+import * as WebIFC from '__IFC_API__';
+
+let api = null, modelID = null, P = null;
+let elemIdx = new Map(), elemList = [];
+
+export async function handle(msg, post){
+  P = post;
+  if (msg.cmd === 'parse')      await parse(msg);
+  else if (msg.cmd === 'index') sendIndex();
+  else if (msg.cmd === 'props') sendProps(msg.eid);
+}
+
+const BATCH_VERTS = 300000, INST_BUDGET = 3000, CHUNK_VERTS = 400000;
+const clampB = v => Math.max(-127, Math.min(127, Math.round(v * 127)));
+const b255   = v => Math.max(0, Math.min(255, Math.round(v * 255)));
+
+async function parse({buffer, wasmPath, geometry}){
+  if (!api){
+    P({type:'phase', text:'Инициализация web-ifc', p:.02});
+    api = new WebIFC.IfcAPI();
+    api.SetWasmPath(wasmPath, true);
+    await api.Init();
+  }
+  P({type:'phase', text:'Открываем модель', p:.05});
+  if (modelID !== null){ try{ api.CloseModel(modelID); }catch{} modelID = null; }
+  modelID = api.OpenModel(new Uint8Array(buffer), {COORDINATE_TO_ORIGIN:true, CIRCLE_SEGMENTS:8});
+  let schema = '';
+  try { schema = api.GetModelSchema(modelID) || ''; } catch {}
+
+  elemIdx = new Map(); elemList = [];
+  if (!geometry){ P({type:'reparsed'}); return; }
+
+  P({type:'phase', text:'Читаем тесселированную геометрию', p:.1});
+  const SKIP = new Set([WebIFC.IFCSPACE, WebIFC.IFCOPENINGELEMENT].filter(v => typeof v === 'number'));
+  const geos = new Map();
+  let seen = 0, tris = 0;
+
+  api.StreamAllMeshes(modelID, (flat) => {
+    const eid = flat.expressID;
+    let tc = 0; try { tc = api.GetLineType(modelID, eid); } catch {}
+    if (SKIP.has(tc)) return;
+    if (!elemIdx.has(eid)){ elemIdx.set(eid, elemList.length); elemList.push(eid); }
+    const ei = elemIdx.get(eid);
+    const pg = flat.geometries;
+    for (let i = 0; i < pg.size(); i++){
+      const g = pg.get(i);
+      const gid = g.geometryExpressID;
+      let rec = geos.get(gid);
+      if (!rec){
+        const raw = api.GetGeometry(modelID, gid);
+        const v = api.GetVertexArray(raw.GetVertexData(), raw.GetVertexDataSize());
+        const ix = api.GetIndexArray(raw.GetIndexData(), raw.GetIndexDataSize());
+        const n = v.length / 6;
+        const pos = new Float32Array(n*3), nor = new Int8Array(n*3);
+        const lb = [Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];
+        for (let k = 0; k < n; k++){
+          const x=v[k*6], y=v[k*6+1], z=v[k*6+2];
+          pos[k*3]=x; pos[k*3+1]=y; pos[k*3+2]=z;
+          if (x<lb[0])lb[0]=x; if (y<lb[1])lb[1]=y; if (z<lb[2])lb[2]=z;
+          if (x>lb[3])lb[3]=x; if (y>lb[4])lb[4]=y; if (z>lb[5])lb[5]=z;
+          nor[k*3]=clampB(v[k*6+3]); nor[k*3+1]=clampB(v[k*6+4]); nor[k*3+2]=clampB(v[k*6+5]);
+        }
+        const idx = n <= 65535 ? new Uint16Array(ix) : new Uint32Array(ix);
+        raw.delete();
+        rec = {pos, nor, idx, n, lb, mats:[], cols:[], eis:[], cnt:0};
+        geos.set(gid, rec);
+      }
+      const m = g.flatTransformation;
+      for (let k = 0; k < 16; k++) rec.mats.push(m[k]);
+      const c = g.color;
+      rec.cols.push(b255(c.x), b255(c.y), b255(c.z), c.w === 0 ? 255 : b255(c.w));
+      rec.eis.push(ei); rec.cnt++;
+      tris += rec.idx.length / 3;
+    }
+    if ((++seen & 1023) === 0) P({type:'phase', text:`Геометрия: ${seen} элементов`, p:Math.min(.6, .1 + seen/120000)});
+  });
+
+  P({type:'phase', text:'Собираем буферы', p:.65});
+  const nElem = elemList.length;
+  const ebox = new Float32Array(nElem*6);
+  for (let i = 0; i < nElem; i++){
+    ebox[i*6]=Infinity; ebox[i*6+1]=Infinity; ebox[i*6+2]=Infinity;
+    ebox[i*6+3]=-Infinity; ebox[i*6+4]=-Infinity; ebox[i*6+5]=-Infinity;
+  }
+  const all = [...geos.values()].sort((a,b) => b.cnt - a.cnt);
+  let budget = INST_BUDGET;
+  const inst = [], singles = [];
+  for (const r of all){ if (r.cnt >= 2 && budget > 0){ budget--; inst.push(r); } else singles.push(r); }
+  emitInstanced(inst, ebox);
+  emitBatches(singles, ebox);
+
+  P({type:'phase', text:'Читаем атрибуты элементов', p:.9});
+  const meta = readMeta();
+  P({type:'done', schema, tris, nElem, ebox, ...meta}, [ebox.buffer, meta.ids.buffer]);
+}
+
+function emitInstanced(list, ebox){
+  let buf = [], verts = 0;
+  const flush = () => {
+    if (!buf.length) return;
+    let vT=0, iT=0, nT=0;
+    for (const r of buf){ vT+=r.n; iT+=r.idx.length; nT+=r.cnt; }
+    const pos=new Float32Array(vT*3), nor=new Int8Array(vT*3), idx=new Uint32Array(iT);
+    const table=new Int32Array(buf.length*6), sph=new Float32Array(buf.length*4);
+    const mats=new Float32Array(nT*16), cols=new Uint8Array(nT*3);
+    const alp=new Uint8Array(nT), ids=new Float32Array(nT);
+    let vo=0, io=0, no=0;
+    buf.forEach((r, gi) => {
+      pos.set(r.pos, vo*3); nor.set(r.nor, vo*3); idx.set(r.idx, io);
+      table.set([vo, r.n, io, r.idx.length, no, r.cnt], gi*6);
+      const cx=(r.lb[0]+r.lb[3])/2, cy=(r.lb[1]+r.lb[4])/2, cz=(r.lb[2]+r.lb[5])/2;
+      sph.set([cx,cy,cz,Math.hypot(r.lb[3]-cx, r.lb[4]-cy, r.lb[5]-cz)], gi*4);
+      for (let k = 0; k < r.cnt; k++){
+        for (let q = 0; q < 16; q++) mats[(no+k)*16+q] = r.mats[k*16+q];
+        cols[(no+k)*3]=r.cols[k*4]; cols[(no+k)*3+1]=r.cols[k*4+1]; cols[(no+k)*3+2]=r.cols[k*4+2];
+        alp[no+k]=r.cols[k*4+3]; ids[no+k]=r.eis[k];
+        growBox(ebox, r.eis[k], r.lb, r.mats, k*16);
+      }
+      vo+=r.n; io+=r.idx.length; no+=r.cnt;
+      r.pos=r.nor=r.idx=r.mats=r.cols=null;
+    });
+    P({type:'inst', pos, nor, idx, table, sph, mats, cols, alp, ids},
+      [pos.buffer,nor.buffer,idx.buffer,table.buffer,sph.buffer,mats.buffer,cols.buffer,alp.buffer,ids.buffer]);
+    buf=[]; verts=0;
+  };
+  for (const r of list){ buf.push(r); verts += r.n; if (verts >= CHUNK_VERTS) flush(); }
+  flush();
+}
+
+function emitBatches(list, ebox){
+  const items = [];
+  const gmin=[Infinity,Infinity,Infinity], gmax=[-Infinity,-Infinity,-Infinity];
+  for (const r of list) for (let k = 0; k < r.cnt; k++){
+    const c = centroid(r.lb, r.mats, k*16);
+    items.push({r, k, c});
+    for (let a=0;a<3;a++){ if (c[a]<gmin[a]) gmin[a]=c[a]; if (c[a]>gmax[a]) gmax[a]=c[a]; }
+  }
+  const span = Math.max(gmax[0]-gmin[0], gmax[1]-gmin[1], gmax[2]-gmin[2]) || 1;
+  for (const it of items){
+    const q = a => Math.max(0, Math.min(1023, Math.floor((it.c[a]-gmin[a])/span*1023)));
+    it.key = morton(q(0), q(1), q(2));
+  }
+  items.sort((a,b) => a.key - b.key);
+
+  let group = [], verts = 0;
+  const flush = () => {
+    if (!group.length) return;
+    let vT=0, iT=0;
+    for (const it of group){ vT+=it.r.n; iT+=it.r.idx.length; }
+    const pos=new Float32Array(vT*3), nor=new Int8Array(vT*3), idx=new Uint32Array(iT);
+    const cols=new Uint8Array(vT*3), alp=new Uint8Array(vT), ids=new Float32Array(vT);
+    const ranges=new Int32Array(group.length*3);
+    const box=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];
+    let vo=0, io=0;
+    group.forEach((it, gi) => {
+      const r=it.r, o=it.k*16, m=r.mats;
+      for (let v = 0; v < r.n; v++){
+        const x=r.pos[v*3], y=r.pos[v*3+1], z=r.pos[v*3+2];
+        const X=m[o]*x+m[o+4]*y+m[o+8]*z+m[o+12];
+        const Y=m[o+1]*x+m[o+5]*y+m[o+9]*z+m[o+13];
+        const Z=m[o+2]*x+m[o+6]*y+m[o+10]*z+m[o+14];
+        pos[(vo+v)*3]=X; pos[(vo+v)*3+1]=Y; pos[(vo+v)*3+2]=Z;
+        if (X<box[0])box[0]=X; if (Y<box[1])box[1]=Y; if (Z<box[2])box[2]=Z;
+        if (X>box[3])box[3]=X; if (Y>box[4])box[4]=Y; if (Z>box[5])box[5]=Z;
+        const nx=r.nor[v*3]/127, ny=r.nor[v*3+1]/127, nz=r.nor[v*3+2]/127;
+        const NX=m[o]*nx+m[o+4]*ny+m[o+8]*nz;
+        const NY=m[o+1]*nx+m[o+5]*ny+m[o+9]*nz;
+        const NZ=m[o+2]*nx+m[o+6]*ny+m[o+10]*nz;
+        const L=Math.hypot(NX,NY,NZ)||1;
+        nor[(vo+v)*3]=clampB(NX/L); nor[(vo+v)*3+1]=clampB(NY/L); nor[(vo+v)*3+2]=clampB(NZ/L);
+        cols[(vo+v)*3]=r.cols[it.k*4]; cols[(vo+v)*3+1]=r.cols[it.k*4+1]; cols[(vo+v)*3+2]=r.cols[it.k*4+2];
+        alp[vo+v]=r.cols[it.k*4+3]; ids[vo+v]=r.eis[it.k];
+      }
+      for (let q = 0; q < r.idx.length; q++) idx[io+q] = r.idx[q] + vo;
+      ranges.set([r.eis[it.k], vo, r.n], gi*3);
+      growBox(ebox, r.eis[it.k], r.lb, m, o);
+      vo+=r.n; io+=r.idx.length;
+    });
+    P({type:'batch', pos, nor, idx, cols, alp, ids, ranges, box:new Float32Array(box)},
+      [pos.buffer,nor.buffer,idx.buffer,cols.buffer,alp.buffer,ids.buffer,ranges.buffer]);
+    group=[]; verts=0;
+  };
+  for (const it of items){ group.push(it); verts += it.r.n; if (verts >= BATCH_VERTS) flush(); }
+  flush();
+}
+
+function centroid(lb, m, o){
+  const x=(lb[0]+lb[3])/2, y=(lb[1]+lb[4])/2, z=(lb[2]+lb[5])/2;
+  return [ m[o]*x+m[o+4]*y+m[o+8]*z+m[o+12],
+           m[o+1]*x+m[o+5]*y+m[o+9]*z+m[o+13],
+           m[o+2]*x+m[o+6]*y+m[o+10]*z+m[o+14] ];
+}
+function growBox(ebox, ei, lb, m, o){
+  for (let c = 0; c < 8; c++){
+    const x=lb[(c&1)?3:0], y=lb[(c&2)?4:1], z=lb[(c&4)?5:2];
+    const X=m[o]*x+m[o+4]*y+m[o+8]*z+m[o+12];
+    const Y=m[o+1]*x+m[o+5]*y+m[o+9]*z+m[o+13];
+    const Z=m[o+2]*x+m[o+6]*y+m[o+10]*z+m[o+14];
+    if (X<ebox[ei*6])   ebox[ei*6]=X;
+    if (Y<ebox[ei*6+1]) ebox[ei*6+1]=Y;
+    if (Z<ebox[ei*6+2]) ebox[ei*6+2]=Z;
+    if (X>ebox[ei*6+3]) ebox[ei*6+3]=X;
+    if (Y>ebox[ei*6+4]) ebox[ei*6+4]=Y;
+    if (Z>ebox[ei*6+5]) ebox[ei*6+5]=Z;
+  }
+}
+function part1by2(n){ n&=0x3ff; n=(n|(n<<16))&0x30000ff; n=(n|(n<<8))&0x300f00f; n=(n|(n<<4))&0x30c30c3; n=(n|(n<<2))&0x9249249; return n; }
+const morton = (x,y,z) => part1by2(x) | (part1by2(y)<<1) | (part1by2(z)<<2);
+
+const TYPE_NAMES = (() => {
+  const m = new Map();
+  for (const k in WebIFC){
+    const v = WebIFC[k];
+    if (typeof v === 'number' && /^IFC[A-Z0-9]+$/.test(k) && !m.has(v)) m.set(v, k);
+  }
+  return m;
+})();
+function typeName(code){
+  try { const n = api.GetNameFromTypeCode && api.GetNameFromTypeCode(code); if (n) return n; } catch {}
+  return TYPE_NAMES.get(code) || ('TYPE_' + code);
+}
+function readMeta(){
+  const n = elemList.length;
+  const ids = new Uint32Array(n);
+  const guids = new Array(n), names = new Array(n), typeNames = new Array(n);
+  for (let i = 0; i < n; i++){
+    const eid = elemList[i];
+    ids[i] = eid;
+    let line = null;
+    try { line = api.GetLine(modelID, eid, false); } catch {}
+    guids[i] = line && line.GlobalId ? line.GlobalId.value : '';
+    names[i] = line && line.Name ? line.Name.value : '';
+    typeNames[i] = typeName(line ? line.type : 0);
+  }
+  return {ids, guids, names, typeNames};
+}
+
+function val(v){
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') return 'value' in v ? val(v.value) : '';
+  return String(v);
+}
+function readPset(ref){
+  if (!ref) return null;
+  let def; try { def = api.GetLine(modelID, ref.value); } catch { return null; }
+  const rows = [];
+  for (const h of (def.HasProperties || def.Quantities || [])){
+    try {
+      const p = api.GetLine(modelID, h.value);
+      const nm = p.Name && p.Name.value; if (!nm) continue;
+      let v = '';
+      if (p.NominalValue !== undefined) v = val(p.NominalValue);
+      else for (const k of ['LengthValue','AreaValue','VolumeValue','CountValue','WeightValue']){
+        if (p[k] !== undefined){ v = val(p[k]); break; }
+      }
+      rows.push([nm, v]);
+    } catch {}
+  }
+  return rows.length ? {name:(def.Name && def.Name.value) || 'Pset', rows} : null;
+}
+function sendProps(eid){
+  const out = [];
+  let rels; try { rels = api.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES); }
+  catch { P({type:'props', eid, psets:out}); return; }
+  for (let i = 0; i < rels.size(); i++){
+    let rel; try { rel = api.GetLine(modelID, rels.get(i)); } catch { continue; }
+    if (!(rel.RelatedObjects || []).some(o => o.value === eid)) continue;
+    const ps = readPset(rel.RelatingPropertyDefinition);
+    if (ps) out.push(ps);
+  }
+  P({type:'props', eid, psets:out});
+}
+function sendIndex(){
+  const keys = new Map();
+  let rels; try { rels = api.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES); }
+  catch { P({type:'index', keys:[]}); return; }
+  const total = rels.size();
+  for (let i = 0; i < total; i++){
+    if ((i & 511) === 0) P({type:'phase', text:`Свойства: ${i} / ${total}`, p:i/total});
+    let rel; try { rel = api.GetLine(modelID, rels.get(i)); } catch { continue; }
+    const ps = readPset(rel.RelatingPropertyDefinition);
+    if (!ps) continue;
+    const targets = [];
+    for (const o of (rel.RelatedObjects || [])){
+      const ei = elemIdx.get(o.value);
+      if (ei !== undefined) targets.push(ei);
+    }
+    if (!targets.length) continue;
+    for (const [nm, v] of ps.rows){
+      const key = ps.name + ' · ' + nm;
+      let map = keys.get(key);
+      if (!map){ map = new Map(); keys.set(key, map); }
+      for (const ei of targets) map.set(ei, v);
+    }
+  }
+  P({type:'index', keys:[...keys.entries()].map(([k,m]) => ({key:k, idx:Uint32Array.from(m.keys()), vals:[...m.values()]}))});
+}
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ═══════════════════ НАСТРОЙКА ═══════════════════ */
+
+/* Список моделей на сервере. Можно задать прямо здесь… */
+const FALLBACK_MODELS = [
+  // {id:'facade', name:'Фасад, корпус А', url:'models/facade.rvpack'},
+];
+/* …или вынести в JSON рядом с вьюером:
+   { "default":"facade",
+     "models":[ {"id":"facade","name":"Фасад, корпус А","url":"facade-2026-05.rvpack"} ] }  */
+const MANIFEST_URL = 'models/models.json';
+
+/* Панель подготовки — выключите на публичном стенде */
+const SHOW_ADMIN = false;
+
+/* Публичная сборка: вьюер открывает только то, что перечислено в манифесте.
+   Локальные файлы не принимаются, произвольный URL в ?model= игнорируется. */
+const LOCK_TO_SERVER = true;
+
+/* web-ifc нужен только для разбора .ifc. Для .rvpack не скачивается вообще. */
+const IFC_CANDIDATES = [
+  './vendor/web-ifc-api.js',
+  'https://cdn.jsdelivr.net/npm/web-ifc@0.0.58/web-ifc-api.js',
+  'https://unpkg.com/web-ifc@0.0.58/web-ifc-api.js',
+  'https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api.js',
+];
+const CACHE_MAX_MB = 500;
+const FREE_CPU_ARRAYS = true;
+const PALETTE = ['#1f5fa9','#c2410c','#15803d','#7c3aed','#0e7490','#b91c1c',
+                 '#a16207','#be185d','#4d7c0f','#4338ca','#0f766e','#9a3412'];
+const HILITE = [0x2b, 0x7f, 0xff];
+
+const WORKER_SHIM = `
+let handle = null;
+self.onmessage = async (e) => {
+  try {
+    if (!handle) handle = (await import('__PARSER__')).handle;
+    await handle(e.data, (m, t) => self.postMessage(m, t || []));
+  } catch (err) {
+    self.postMessage({type:'error', message:'в воркере: ' + (err && (err.message || err))});
+  }
+};
+self.postMessage({type:'boot'});
+`;
+
+/* ═══════════════════ журнал ═══════════════════ */
+const logEl = document.getElementById('log');
+const logLines = [];
+function log(s){
+  logLines.push(new Date().toLocaleTimeString('ru-RU') + '  ' + s);
+  if (logLines.length > 40) logLines.shift();
+  logEl.textContent = logLines.join('\n');
+  logEl.scrollTop = logEl.scrollHeight;
+  console.log('[ifc]', s);
+}
+
+/* ═══════════════════ сцена ═══════════════════ */
+const canvas = document.getElementById('c');
+const stage  = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#dfe4e9');
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+camera.position.set(20, 15, 20);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+scene.add(new THREE.HemisphereLight('#ffffff', '#93a0ad', 2.0));
+const key = new THREE.DirectionalLight('#ffffff', 1.8); key.position.set(1,2.4,1.2); scene.add(key);
+const fill = new THREE.DirectionalLight('#ffffff', .65); fill.position.set(-1.4,.8,-1); scene.add(fill);
+const root = new THREE.Group(); root.rotation.x = -Math.PI/2; scene.add(root);
+let grid = null;
+const selBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#1f5fa9'));
+selBox.visible = false; selBox.material.depthTest = false; root.add(selBox);
+
+/* Revit отдаёт стекло с альфой вплоть до 0.05 — на экране это почти пустота.
+   Ниже этого порога непрозрачность поднимается при загрузке. 0..255 */
+const MIN_ALPHA = 90;
+
+/* Если у холста есть мультисэмплинг, полупрозрачность рисуется покрытием
+   семплов — заметно ровнее дизеринга. Иначе остаётся матрица Байера. */
+const MSAA = (() => { const g = renderer.getContext(); return g.getParameter(g.SAMPLES) | 0; })();
+const SMOOTH_GLASS = MSAA >= 2;
+
+const material = new THREE.MeshLambertMaterial({color:0xffffff, side:THREE.FrontSide});
+material.alphaToCoverage = SMOOTH_GLASS;
+material.onBeforeCompile = (sh) => {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', `#include <common>
+      attribute vec3 aCol; attribute float aAlpha;
+      varying vec3 vCol; varying float vA;`)
+    .replace('#include <project_vertex>', `#include <project_vertex>
+      vCol = aCol; vA = aAlpha;
+      if (aAlpha <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);`);
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+      varying vec3 vCol; varying float vA;
+      float b2(vec2 a){ a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }
+      float b4(vec2 a){ return b2(0.5 * a) * 0.25 + b2(a); }
+      float b8(vec2 a){ return b4(0.5 * a) * 0.25 + b2(a); }`)
+    .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+      ${SMOOTH_GLASS ? '' : 'if (vA < 0.996 && b8(gl_FragCoord.xy) > vA) discard;'}`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      diffuseColor.rgb *= vCol;
+      ${SMOOTH_GLASS ? 'diffuseColor.a = vA;' : ''}`);
+};
+material.customProgramCacheKey = () => 'ifc-rv-mat-' + (SMOOTH_GLASS ? 'msaa' : 'dither');
+
+const pickMat = new THREE.ShaderMaterial({
+  vertexShader:`
+    attribute float aId; attribute float aAlpha;
+    varying highp vec3 vPick;
+    void main(){
+      float id = aId + 1.0;
+      vPick = vec3(mod(id,256.0), mod(floor(id/256.0),256.0), mod(floor(id/65536.0),256.0)) / 255.0;
+      #ifdef USE_INSTANCING
+        vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      #else
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      #endif
+      gl_Position = projectionMatrix * mv;
+      if (aAlpha <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    }`,
+  fragmentShader:`varying highp vec3 vPick;
+    void main(){ gl_FragColor = vec4(vPick, 1.0); }`,
+});
+const pickRT = new THREE.WebGLRenderTarget(1, 1);
+const pickBuf = new Uint8Array(4);
+
+/* ═══════════════════ состояние ═══════════════════ */
+const M = {
+  source:null, meshes:[], refs:[], nElem:0,
+  ids:null, guids:null, names:null, typeNames:null, ebox:null,
+  byType:new Map(), guidMap:new Map(),
+  hidden:null, baseCol:null, origCol:null, alphaBase:null, origAlpha:null,
+  selected:-1, propIndex:new Map(), tris:0, instances:0, parsedForProps:false,
+};
+let needsRender = true, dirty = new Set();
+const invalidate = () => needsRender = true;
+controls.addEventListener('change', invalidate);
+
+function resize(){
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  invalidate();
+}
+new ResizeObserver(resize).observe(stage); resize();
+
+let last = performance.now(), frames = 0, fps = 0;
+renderer.setAnimationLoop(() => {
+  const moving = controls.update();
+  if (!moving && !needsRender) return;
+  needsRender = false;
+  renderer.render(scene, camera);
+  frames++;
+  const now = performance.now();
+  if (now - last > 500){ fps = Math.round(frames*1000/(now-last)); frames = 0; last = now; updatePerf(); }
+});
+function updatePerf(){
+  const p = document.getElementById('perf');
+  if (p.hidden) return;
+  const i = renderer.info.render;
+  p.textContent = `${fps} fps   calls ${i.calls}   tri ${(i.triangles/1e6).toFixed(1)}M`;
+}
+
+/* ═══════════════════ оверлей ═══════════════════ */
+const overlay = document.getElementById('overlay');
+function shell(cls){ overlay.className = cls || ''; overlay.innerHTML = ''; return overlay; }
+function phase(text, p){
+  const o = shell();
+  const h = document.createElement('h3'); h.textContent = text;
+  const bar = document.createElement('div'); bar.className = 'bar';
+  const i = document.createElement('i'); i.style.width = Math.round(Math.min(1, p||0)*100) + '%';
+  bar.appendChild(i); o.append(h, bar, logEl);
+}
+function fail(msg){
+  const o = shell('error');
+  const h = document.createElement('h3'); h.textContent = 'Не получилось';
+  const p = document.createElement('p'); p.textContent = String(msg).split('\n')[0];
+  o.append(h, p, logEl);
+  log('ОШИБКА: ' + msg);
+}
+function note(title, text){
+  const o = shell();
+  const h = document.createElement('h3'); h.textContent = title;
+  const p = document.createElement('p'); p.textContent = text;
+  o.append(h, p, logEl);
+}
+const hide = () => overlay.className = 'hidden';
+
+/* ═══════════════════ сеть ═══════════════════ */
+async function fetchProgress(url, label, from, to){
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+  const total = +(res.headers.get('content-length') || 0);
+  const tag = res.headers.get('etag') || res.headers.get('last-modified') || String(total);
+  if (!res.body){ return {buf: await res.arrayBuffer(), tag}; }
+  const reader = res.body.getReader();
+  const parts = []; let got = 0;
+  for(;;){
+    const {done, value} = await reader.read();
+    if (done) break;
+    parts.push(value); got += value.length;
+    const mb = (got/1048576).toFixed(1);
+    const frac = total ? Math.min(1, got/total) : 0;
+    phase(`${label} — ${mb} МБ`, from + (to-from)*frac);
+  }
+  const all = new Uint8Array(got);
+  let o = 0; for (const p of parts){ all.set(p, o); o += p.length; }
+  return {buf: all.buffer, tag};
+}
+
+/* ═══════════════════ формат .rvpack ═══════════════════ */
+const TYPES = {Float32Array, Int8Array, Uint8Array, Uint16Array, Uint32Array, Int32Array};
+const align8 = n => Math.ceil(n/8)*8;
+
+function packModel(){
+  const chunks = pending.filter(c => c.type === 'inst' || c.type === 'batch');
+  const done = pending.find(c => c.type === 'done');
+  if (!chunks.length || !done) throw new Error('Данных модели нет в памяти. Откройте .ifc заново.');
+
+  const bufs = [];
+  const put = v => { bufs.push(v); return {b: bufs.length - 1}; };
+  const chunkDesc = chunks.map(c => {
+    const d = {type:c.type};
+    for (const k of Object.keys(c)){
+      if (k === 'type') continue;
+      d[k] = ArrayBuffer.isView(c[k]) ? put(c[k]) : c[k];
+    }
+    return d;
+  });
+
+  const typeDict = [...new Set(M.typeNames)];
+  const tmap = new Map(typeDict.map((t,i) => [t,i]));
+  const typeIdx = new Uint16Array(M.nElem);
+  for (let i = 0; i < M.nElem; i++) typeIdx[i] = tmap.get(M.typeNames[i]);
+
+  const header = {
+    v:1, schema:done.schema, tris:done.tris, nElem:M.nElem,
+    ebox:put(M.ebox), ids:put(M.ids),
+    guids:M.guids.join('\u0000'),
+    names:M.names.join('\u0000'),
+    typeDict, typeIdx:put(typeIdx),
+    props:[...M.propIndex.values()].map(r => ({key:r.key, idx:put(r.idx), v:put(r.v), vdict:r.vdict})),
+    chunks:chunkDesc,
+    buffers:[],
+  };
+  let off = 0;
+  header.buffers = bufs.map(v => {
+    off = align8(off);
+    const d = {o:off, n:v.length, t:v.constructor.name};
+    off += v.byteLength;
+    return d;
+  });
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  const base = align8(8 + json.length);
+  const out = new Uint8Array(base + align8(off));
+  out.set([82,86,80,75], 0);                        // RVPK
+  new DataView(out.buffer).setUint32(4, json.length, true);
+  out.set(json, 8);
+  bufs.forEach((v, i) => out.set(new Uint8Array(v.buffer, v.byteOffset, v.byteLength), base + header.buffers[i].o));
+  return out;
+}
+
+function unpackModel(ab){
+  const u8 = new Uint8Array(ab);
+  if (String.fromCharCode(u8[0],u8[1],u8[2],u8[3]) !== 'RVPK') throw new Error('Файл не является пакетом .rvpack');
+  const jlen = new DataView(ab).getUint32(4, true);
+  const header = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8+jlen)));
+  const base = align8(8 + jlen);
+  const view = ref => { const d = header.buffers[ref.b]; return new TYPES[d.t](ab, base + d.o, d.n); };
+  const isRef = x => x && typeof x === 'object' && 'b' in x;
+
+  const chunks = header.chunks.map(d => {
+    const c = {type:d.type};
+    for (const k of Object.keys(d)){ if (k !== 'type') c[k] = isRef(d[k]) ? view(d[k]) : d[k]; }
+    return c;
+  });
+  const ti = view(header.typeIdx);
+  const meta = {
+    type:'done', schema:header.schema, tris:header.tris, nElem:header.nElem,
+    ebox:view(header.ebox), ids:view(header.ids),
+    guids: header.nElem ? header.guids.split('\u0000') : [],
+    names: header.nElem ? header.names.split('\u0000') : [],
+    typeNames: Array.from(ti, i => header.typeDict[i]),
+  };
+  const props = (header.props || []).map(p => ({key:p.key, idx:view(p.idx), v:view(p.v), vdict:p.vdict}));
+  return {chunks, meta, props};
+}
+
+/* ═══════════════════ движок разбора IFC ═══════════════════ */
+let engine = null;
+async function findIfc(){
+  const tried = [];
+  for (const url of IFC_CANDIDATES){
+    try{
+      log('Пробуем ' + url);
+      const r = await fetch(url, {cache:'force-cache'});
+      if (!r.ok){ tried.push(`${url} → HTTP ${r.status}`); log('  HTTP ' + r.status); continue; }
+      const text = await r.text();
+      if (text.length < 1000 || !/IfcAPI/.test(text)){ tried.push(`${url} → не web-ifc-api.js`); continue; }
+      log('  найдено, ' + Math.round(text.length/1024) + ' КБ');
+      return {url:new URL(url, location.href).href, text};
+    }catch(err){ tried.push(`${url} → ${err.message}`); log('  ' + err.message); }
+  }
+  throw new Error('web-ifc не найден.\n' + tried.join('\n'));
+}
+async function boot(){
+  if (engine) return engine;
+  const {url, text} = await findIfc();
+  const ifcUrl = URL.createObjectURL(new Blob([text], {type:'text/javascript'}));
+  const wasmBase = url.slice(0, url.lastIndexOf('/') + 1);
+  log('WASM из ' + wasmBase);
+  const parserSrc = document.getElementById('parserSrc').textContent.replace('__IFC_API__', ifcUrl);
+  const parserUrl = URL.createObjectURL(new Blob([parserSrc], {type:'text/javascript'}));
+  let worker = null, local = null;
+  try{
+    const shim = URL.createObjectURL(new Blob([WORKER_SHIM.replace('__PARSER__', parserUrl)], {type:'text/javascript'}));
+    worker = new Worker(shim, {type:'module'});
+    await new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('нет ответа за 10 с')), 10000);
+      worker.onmessage = e => { if (e.data && e.data.type === 'boot'){ clearTimeout(t); res(); } };
+      worker.onerror = ev => { clearTimeout(t); rej(new Error(ev.message || 'модуль не загрузился')); };
+    });
+    worker.onmessage = e => onMsg(e.data);
+    worker.onerror = ev => fail('Сбой воркера: ' + (ev.message || 'без деталей'));
+    log('Воркер запущен');
+  }catch(err){
+    log('Воркер недоступен (' + err.message + '), парсим в основном потоке');
+    if (worker){ worker.terminate(); worker = null; }
+    local = (await import(parserUrl)).handle;
+  }
+  engine = {worker, local, wasmBase};
+  return engine;
+}
+async function send(msg){
+  const e = await boot();
+  const payload = {...msg, wasmPath:e.wasmBase};
+  if (e.worker) e.worker.postMessage(payload, msg.buffer ? [msg.buffer] : []);
+  else { await new Promise(r => setTimeout(r, 30)); await e.local(payload, m => onMsg(m)); }
+}
+
+/* ═══════════════════ сообщения ═══════════════════ */
+let pending = [], cacheBytes = 0, t0 = 0, propsWaiting = null;
+function onMsg(m){
+  switch (m.type){
+    case 'phase':    phase(m.text, m.p); break;
+    case 'inst':     keep(m); addInstanced(m); break;
+    case 'batch':    keep(m); addBatch(m); break;
+    case 'done':     keep(m); finish(m); break;
+    case 'reparsed': M.parsedForProps = true; if (propsWaiting !== null) send({cmd:'props', eid:propsWaiting}); break;
+    case 'props':    showProps(m); break;
+    case 'index':    onIndex(m); break;
+    case 'error':    fail(m.message); break;
+  }
+}
+function keep(m){
+  if (cacheBytes > CACHE_MAX_MB * 1048576) return;
+  for (const k in m) if (ArrayBuffer.isView(m[k])) cacheBytes += m[k].byteLength;
+  pending.push(m);
+}
+
+/* ═══════════════════ построение мешей ═══════════════════ */
+function addInstanced(ch){
+  const {pos, nor, idx, table, sph, mats, cols, alp, ids} = ch;
+  const n = table.length/6;
+  for (let g = 0; g < n; g++){
+    const vo=table[g*6], vc=table[g*6+1], io=table[g*6+2], ic=table[g*6+3], no=table[g*6+4], nc=table[g*6+5];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', attr(pos.subarray(vo*3,(vo+vc)*3), 3));
+    geo.setAttribute('normal',   attr(nor.subarray(vo*3,(vo+vc)*3), 3, true));
+    geo.setIndex(attr(idx.subarray(io, io+ic), 1));
+    geo.setAttribute('aCol',   new THREE.InstancedBufferAttribute(cols.subarray(no*3,(no+nc)*3), 3, true));
+    geo.setAttribute('aAlpha', new THREE.InstancedBufferAttribute(alp.subarray(no, no+nc), 1, true));
+    geo.setAttribute('aId',    new THREE.InstancedBufferAttribute(ids.subarray(no, no+nc), 1));
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(sph[g*4],sph[g*4+1],sph[g*4+2]), sph[g*4+3]);
+    const mesh = new THREE.InstancedMesh(geo, material, nc);
+    mesh.instanceMatrix = new THREE.InstancedBufferAttribute(mats.subarray(no*16,(no+nc)*16), 16);
+    mesh.computeBoundingSphere();
+    const mi = M.meshes.length; M.meshes.push(mesh); root.add(mesh);
+    for (let i = 0; i < nc; i++) pushRef(ids[no+i], mi, i, -1);
+    M.instances += nc;
+  }
+  invalidate();
+}
+function addBatch(ch){
+  const {pos, nor, idx, cols, alp, ids, ranges, box} = ch;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', attr(pos, 3));
+  geo.setAttribute('normal',   attr(nor, 3, true));
+  geo.setAttribute('aCol',     new THREE.BufferAttribute(cols, 3, true));
+  geo.setAttribute('aAlpha',   new THREE.BufferAttribute(alp, 1, true));
+  geo.setAttribute('aId',      attr(ids, 1));
+  geo.setIndex(attr(idx, 1));
+  geo.boundingBox = new THREE.Box3(new THREE.Vector3(box[0],box[1],box[2]), new THREE.Vector3(box[3],box[4],box[5]));
+  geo.boundingSphere = geo.boundingBox.getBoundingSphere(new THREE.Sphere());
+  const mesh = new THREE.Mesh(geo, material);
+  const mi = M.meshes.length; M.meshes.push(mesh); root.add(mesh);
+  for (let r = 0; r < ranges.length; r += 3) pushRef(ranges[r], mi, ranges[r+1], ranges[r+2]);
+  M.instances += ranges.length/3;
+  invalidate();
+}
+function attr(a, size, normalized){
+  const b = new THREE.BufferAttribute(a, size, !!normalized);
+  if (FREE_CPU_ARRAYS) b.onUpload(function(){ this.array = null; });
+  return b;
+}
+function pushRef(ei, mi, a, b){
+  let r = M.refs[ei]; if (!r) r = M.refs[ei] = [];
+  r.push(mi, a, b);
+}
+
+/* ═══════════════════ цвет / прозрачность ═══════════════════ */
+const markDirty = a => dirty.add(a);
+function flush(){ for (const a of dirty) a.needsUpdate = true; dirty.clear(); invalidate(); }
+function writeColor(ei, r, g, b){
+  const refs = M.refs[ei]; if (!refs) return;
+  for (let k = 0; k < refs.length; k += 3){
+    const at = M.meshes[refs[k]].geometry.getAttribute('aCol'), arr = at.array;
+    if (refs[k+2] < 0){ const i = refs[k+1]; arr[i*3]=r; arr[i*3+1]=g; arr[i*3+2]=b; }
+    else { const s=refs[k+1], c=refs[k+2]; for (let v=s; v<s+c; v++){ arr[v*3]=r; arr[v*3+1]=g; arr[v*3+2]=b; } }
+    markDirty(at);
+  }
+}
+function writeAlpha(ei, a){
+  const refs = M.refs[ei]; if (!refs) return;
+  for (let k = 0; k < refs.length; k += 3){
+    const at = M.meshes[refs[k]].geometry.getAttribute('aAlpha'), arr = at.array;
+    if (refs[k+2] < 0) arr[refs[k+1]] = a;
+    else { const s=refs[k+1], c=refs[k+2]; for (let v=s; v<s+c; v++) arr[v] = a; }
+    markDirty(at);
+  }
+}
+function setColor(list, hex){
+  const c = new THREE.Color(hex);
+  const r = Math.round(c.r*255), g = Math.round(c.g*255), b = Math.round(c.b*255);
+  for (const ei of list){
+    M.baseCol[ei*3]=r; M.baseCol[ei*3+1]=g; M.baseCol[ei*3+2]=b;
+    if (ei !== M.selected) writeColor(ei, r, g, b);
+  }
+  flush();
+}
+function resetLook(list){
+  for (const ei of list){
+    M.baseCol[ei*3]=M.origCol[ei*3]; M.baseCol[ei*3+1]=M.origCol[ei*3+1]; M.baseCol[ei*3+2]=M.origCol[ei*3+2];
+    if (ei !== M.selected) writeColor(ei, M.origCol[ei*3], M.origCol[ei*3+1], M.origCol[ei*3+2]);
+    M.alphaBase[ei] = M.origAlpha[ei];
+    if (!M.hidden[ei]) writeAlpha(ei, M.origAlpha[ei]);
+  }
+  flush();
+}
+function setVisible(list, on){
+  for (const ei of list){ M.hidden[ei] = on ? 0 : 1; writeAlpha(ei, on ? M.alphaBase[ei] : 0); }
+  flush();
+}
+function setAlpha(list, a){
+  const v = Math.round(a*255);
+  for (const ei of list){ M.alphaBase[ei] = v; if (!M.hidden[ei]) writeAlpha(ei, v); }
+  flush();
+}
+
+/* ═══════════════════ загрузка модели ═══════════════════ */
+async function loadUrl(url, label){
+  reset();
+  M.source = {kind:'url', url, isPack:/\.rvpack($|\?)/i.test(url)};
+  t0 = performance.now(); logLines.length = 0;
+  log('Источник: ' + url);
+  try{
+    if (M.source.isPack){
+      const {buf} = await fetchProgress(url, 'Скачиваем пакет', .05, .75);
+      phase('Разбираем пакет', .8);
+      await new Promise(r => setTimeout(r, 20));
+      const {chunks, meta, props} = unpackModel(buf);
+      for (const c of chunks){ keep(c); if (c.type === 'inst') addInstanced(c); else addBatch(c); }
+      keep(meta);
+      if (props.length){ M.propIndex = new Map(props.map(p => [p.key, p])); fillPropSelect(); }
+      finish(meta, label || url.split('/').pop());
+    } else {
+      const {buf, tag} = await fetchProgress(url, 'Скачиваем IFC', .05, .45);
+      const cached = await cacheGet(url + '|' + tag);
+      if (cached){
+        log('Есть разобранная копия в кеше браузера');
+        phase('Восстанавливаем из кеша', .6);
+        for (const m of cached.chunks){ keep(m); if (m.type === 'inst') addInstanced(m); else addBatch(m); }
+        keep(cached.meta);
+        finish(cached.meta, label || url.split('/').pop());
+        return;
+      }
+      M.cacheKey = url + '|' + tag;
+      await send({cmd:'parse', buffer:buf, geometry:true});
+      M.label = label || url.split('/').pop();
+    }
+  }catch(err){ fail(err.message || String(err)); }
+}
+
+async function loadFile(file){
+  reset();
+  M.source = {kind:'file', file, isPack:/\.rvpack$/i.test(file.name)};
+  t0 = performance.now(); logLines.length = 0;
+  log(`Файл ${file.name}, ${(file.size/1048576).toFixed(1)} МБ`);
+  try{
+    const buf = await file.arrayBuffer();
+    if (M.source.isPack){
+      const {chunks, meta, props} = unpackModel(buf);
+      for (const c of chunks){ keep(c); if (c.type === 'inst') addInstanced(c); else addBatch(c); }
+      keep(meta);
+      if (props.length){ M.propIndex = new Map(props.map(p => [p.key, p])); fillPropSelect(); }
+      finish(meta, file.name);
+    } else {
+      M.label = file.name;
+      await send({cmd:'parse', buffer:buf, geometry:true});
+    }
+  }catch(err){ fail(err.message || String(err)); }
+}
+
+function reset(){
+  for (const m of M.meshes){ m.geometry.dispose(); root.remove(m); }
+  M.meshes = []; M.refs = []; M.byType = new Map(); M.guidMap = new Map();
+  M.selected = -1; M.tris = 0; M.instances = 0; M.parsedForProps = false;
+  M.propIndex = new Map(); pending = []; cacheBytes = 0; propsWaiting = null;
+  M.cacheKey = null; M.label = ''; M.glass = [];
+  document.getElementById('glassField').hidden = true;
+  document.getElementById('glassRow').hidden = true;
+  if (grid){ scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); grid = null; }
+  selBox.visible = false;
+  document.getElementById('legend').innerHTML = '';
+  document.getElementById('tree').innerHTML = '';
+  document.getElementById('propSelect').innerHTML = '<option value="">— нет индекса —</option>';
+  document.getElementById('packBtn').disabled = true;
+  renderInspector();
+}
+
+function finish(m, label){
+  M.nElem = m.nElem; M.ids = m.ids; M.guids = m.guids; M.names = m.names;
+  M.typeNames = m.typeNames; M.ebox = m.ebox; M.tris = m.tris;
+  M.hidden = new Uint8Array(M.nElem);
+  M.baseCol = new Uint8Array(M.nElem*3);
+  M.origCol = new Uint8Array(M.nElem*3);
+  M.alphaBase = new Uint8Array(M.nElem).fill(255);
+  M.origAlpha = new Uint8Array(M.nElem).fill(255);
+  for (let ei = 0; ei < M.nElem; ei++){
+    const r = M.refs[ei]; if (!r) continue;
+    const geo = M.meshes[r[0]].geometry;
+    const c = geo.getAttribute('aCol').array, a = geo.getAttribute('aAlpha').array, i = r[1];
+    M.origCol[ei*3]=c[i*3]; M.origCol[ei*3+1]=c[i*3+1]; M.origCol[ei*3+2]=c[i*3+2];
+    M.origAlpha[ei]=a[i]; M.alphaBase[ei]=a[i];
+  }
+  M.baseCol.set(M.origCol);
+
+  // Полупрозрачные элементы: запоминаем их и поднимаем альфу до читаемой.
+  M.glass = [];
+  for (let ei = 0; ei < M.nElem; ei++){
+    if (M.origAlpha[ei] >= 250) continue;
+    M.glass.push(ei);
+    if (M.origAlpha[ei] < MIN_ALPHA) M.origAlpha[ei] = MIN_ALPHA;
+    M.alphaBase[ei] = M.origAlpha[ei];
+    writeAlpha(ei, M.alphaBase[ei]);
+  }
+  flush();
+  if (M.glass.length){
+    document.getElementById('glassField').hidden = false;
+    document.getElementById('glassRow').hidden = false;
+    glassRange.value = String(Math.round(MIN_ALPHA / 2.55));
+    document.getElementById('glassLabel').textContent = `Полупрозрачные — ${glassRange.value}%`;
+  }
+
+  for (let i = 0; i < M.nElem; i++){
+    const t = M.typeNames[i];
+    if (!M.byType.has(t)) M.byType.set(t, []);
+    M.byType.get(t).push(i);
+    if (M.guids[i]) M.guidMap.set(M.guids[i], i);
+  }
+  document.getElementById('stFile').textContent   = label || M.label || '—';
+  document.getElementById('stSchema').textContent = m.schema || '—';
+  document.getElementById('stElems').textContent  = M.nElem.toLocaleString('ru-RU');
+  document.getElementById('stTris').textContent   = Math.round(M.tris).toLocaleString('ru-RU');
+  document.getElementById('stInst').textContent   = M.instances.toLocaleString('ru-RU');
+  document.getElementById('stMeshes').textContent = M.meshes.length.toLocaleString('ru-RU');
+  document.getElementById('stGlass').textContent  = M.glass.length.toLocaleString('ru-RU');
+  document.getElementById('stTime').textContent   = ((performance.now()-t0)/1000).toFixed(1) + ' с';
+  for (const id of ['statsBlock','paintBlock','viewBlock','searchBlock','toolbar','perf'])
+    document.getElementById(id).hidden = false;
+  document.getElementById('packBtn').disabled = !pending.length;
+
+  log(`Готово: ${M.nElem} элементов, ${M.meshes.length} draw calls`);
+  log(`Полупрозрачных элементов: ${M.glass.length}; сглаживание стекла: ${SMOOTH_GLASS ? 'MSAA ×' + MSAA : 'дизеринг'}`);
+  renderTree(); fitView(); hide(); invalidate();
+  if (M.cacheKey) saveCache(M.cacheKey, m);
+}
+
+/* ═══════════════════ кеш разобранного IFC ═══════════════════ */
+const DB = 'ifc-rv-cache', STORE = 'models';
+function idb(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function cacheGet(k){
+  try{ const db = await idb();
+    return await new Promise((res, rej) => {
+      const q = db.transaction(STORE).objectStore(STORE).get(k);
+      q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+    });
+  }catch{ return null; }
+}
+async function saveCache(key, meta){
+  if (cacheBytes > CACHE_MAX_MB*1048576){ log('Крупнее лимита кеша — не сохраняем'); return; }
+  try{
+    const db = await idb();
+    await new Promise((res, rej) => {
+      const st = db.transaction(STORE, 'readwrite').objectStore(STORE);
+      st.clear();
+      const q = st.put({chunks: pending.filter(c => c.type !== 'done'), meta}, key);
+      q.onsuccess = () => res(); q.onerror = () => rej(q.error);
+    });
+    log('Разобранная модель сохранена в кеш браузера');
+  }catch(err){ log('Кеш недоступен: ' + err.message); }
+}
+
+/* ═══════════════════ камера ═══════════════════ */
+function fitView(){
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3());
+  const r = Math.max(box.getSize(new THREE.Vector3()).length()/2, 1);
+  camera.near = r/800; camera.far = r*80; camera.updateProjectionMatrix();
+  camera.position.copy(c.clone().add(new THREE.Vector3(.8,.55,1).normalize().multiplyScalar(r*2.5)));
+  controls.target.copy(c); controls.update();
+  if (grid){ scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  const span = Math.ceil(r*4);
+  grid = new THREE.GridHelper(span, Math.min(100, Math.max(10, Math.round(span/2))), '#b6c0cb', '#ccd4dc');
+  grid.position.set(c.x, box.min.y - r*.02, c.z);
+  grid.material.transparent = true; grid.material.opacity = .55;
+  scene.add(grid); invalidate();
+}
+function zoomTo(ei){
+  const b = M.ebox; if (!b) return;
+  const box = new THREE.Box3(new THREE.Vector3(b[ei*6],b[ei*6+1],b[ei*6+2]), new THREE.Vector3(b[ei*6+3],b[ei*6+4],b[ei*6+5]));
+  box.applyMatrix4(root.matrixWorld);
+  const c = box.getCenter(new THREE.Vector3());
+  const r = Math.max(box.getSize(new THREE.Vector3()).length()/2, .3);
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  camera.position.copy(c.clone().add(dir.multiplyScalar(r*4)));
+  controls.target.copy(c); controls.update();
+}
+
+/* ═══════════════════ пикинг ═══════════════════ */
+let down = null;
+canvas.addEventListener('pointerdown', e => down = {x:e.clientX, y:e.clientY});
+canvas.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX-down.x, e.clientY-down.y) > 4) return;
+  const r = canvas.getBoundingClientRect();
+  select(pick(e.clientX-r.left, e.clientY-r.top));
+});
+window.addEventListener('keydown', e => { if (e.key === 'Escape') select(-1); });
+function pick(px, py){
+  if (!M.meshes.length) return -1;
+  const dpr = renderer.getPixelRatio();
+  const w = Math.floor(canvas.clientWidth*dpr), h = Math.floor(canvas.clientHeight*dpr);
+  const gridWas = grid && grid.visible; if (grid) grid.visible = false;
+  const boxWas = selBox.visible; selBox.visible = false;
+  camera.setViewOffset(w, h, Math.floor(px*dpr), Math.floor(py*dpr), 1, 1);
+  scene.overrideMaterial = pickMat;
+  const prevBg = scene.background; scene.background = null;
+  renderer.setRenderTarget(pickRT);
+  renderer.setClearColor(0x000000, 1); renderer.clear();
+  renderer.render(scene, camera);
+  renderer.readRenderTargetPixels(pickRT, 0, 0, 1, 1, pickBuf);
+  renderer.setRenderTarget(null);
+  scene.overrideMaterial = null; scene.background = prevBg;
+  camera.clearViewOffset();
+  if (grid) grid.visible = gridWas;
+  selBox.visible = boxWas;
+  invalidate();
+  const id = pickBuf[0] + pickBuf[1]*256 + pickBuf[2]*65536;
+  return id === 0 ? -1 : id - 1;
+}
+
+/* ═══════════════════ выбор ═══════════════════ */
+function select(ei){
+  if (M.selected >= 0){
+    const p = M.selected;
+    writeColor(p, M.baseCol[p*3], M.baseCol[p*3+1], M.baseCol[p*3+2]);
+    if (!M.hidden[p]) writeAlpha(p, M.alphaBase[p]);
+  }
+  M.selected = (ei >= 0 && ei < M.nElem) ? ei : -1;
+  if (M.selected >= 0){
+    writeColor(M.selected, HILITE[0], HILITE[1], HILITE[2]);
+    writeAlpha(M.selected, Math.max(M.alphaBase[M.selected], 230));  // подсветку видно всегда
+    const b = M.ebox, i = M.selected;
+    selBox.box.set(new THREE.Vector3(b[i*6],b[i*6+1],b[i*6+2]), new THREE.Vector3(b[i*6+3],b[i*6+4],b[i*6+5]));
+    selBox.visible = true;
+  } else selBox.visible = false;
+  flush();
+  document.querySelectorAll('.item.sel').forEach(n => n.classList.remove('sel'));
+  const node = document.querySelector(`.item[data-ei="${M.selected}"]`);
+  if (node){ node.classList.add('sel'); node.closest('.cls')?.classList.add('open'); node.scrollIntoView({block:'nearest'}); }
+  if (M.selected < 0){ renderInspector(); return; }
+  if (M.propIndex.size) renderInspector(psetsFromIndex(M.selected));
+  else if (M.source && !M.source.isPack) { renderInspector(); requestProps(M.ids[M.selected]); }
+  else renderInspector([]);
+}
+function psetsFromIndex(ei){
+  const groups = new Map();
+  for (const rec of M.propIndex.values()){
+    const at = rec.idx.indexOf(ei);
+    if (at < 0) continue;
+    const sep = rec.key.indexOf(' · ');
+    const pset = sep < 0 ? 'Pset' : rec.key.slice(0, sep);
+    const prop = sep < 0 ? rec.key : rec.key.slice(sep + 3);
+    if (!groups.has(pset)) groups.set(pset, []);
+    groups.get(pset).push([prop, rec.vdict[rec.v[at]]]);
+  }
+  return [...groups.entries()].map(([name, rows]) => ({name, rows}));
+}
+async function requestProps(expressID){
+  propsWaiting = expressID;
+  if (M.parsedForProps) { await send({cmd:'props', eid:expressID}); return; }
+  const buf = await sourceBuffer();
+  await send({cmd:'parse', buffer:buf, geometry:false});
+}
+async function sourceBuffer(){
+  if (!M.source) throw new Error('Источник модели неизвестен');
+  if (M.source.kind === 'file') return M.source.file.arrayBuffer();
+  const {buf} = await fetchProgress(M.source.url, 'Перечитываем IFC', .1, .9);
+  return buf;
+}
+
+/* ═══════════════════ инспектор ═══════════════════ */
+function renderInspector(psets){
+  const box = document.getElementById('inspector');
+  const hint = document.getElementById('selHint');
+  box.innerHTML = '';
+  if (M.selected < 0){
+    hint.textContent = 'Кликните по геометрии';
+    const d = document.createElement('div'); d.className = 'empty'; d.textContent = 'Ничего не выбрано.';
+    box.appendChild(d); return;
+  }
+  const ei = M.selected;
+  hint.textContent = M.typeNames[ei];
+  const head = document.createElement('div'); head.className = 'block';
+  const dl = document.createElement('dl'); dl.className = 'kv';
+  const add = (k, v, copy) => {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v || '—';
+    if (copy && v){
+      const b = document.createElement('button'); b.className = 'copy'; b.textContent = 'копировать';
+      b.onclick = () => { navigator.clipboard?.writeText(v); b.textContent = 'скопировано'; setTimeout(()=>b.textContent='копировать',1200); };
+      dd.appendChild(b);
+    }
+    dl.append(dt, dd);
+  };
+  add('Имя', M.names[ei]); add('Класс', M.typeNames[ei]);
+  add('GlobalId', M.guids[ei], true); add('ExpressID', String(M.ids[ei]));
+  head.appendChild(dl); box.appendChild(head);
+
+  const ctrl = document.createElement('div'); ctrl.className = 'block';
+  const h2 = document.createElement('h2'); h2.textContent = 'Оформление'; ctrl.appendChild(h2);
+  const row = document.createElement('div'); row.className = 'row';
+  const pk = document.createElement('input'); pk.type = 'color'; pk.className = 'swatch';
+  pk.style.width = '28px'; pk.style.height = '24px'; pk.value = hex(M.baseCol, ei);
+  pk.oninput = () => setColor([ei], pk.value);
+  const lab = document.createElement('span'); lab.textContent = 'Цвет элемента'; lab.style.fontSize = '12px';
+  row.append(pk, lab); ctrl.appendChild(row);
+  const fl = document.createElement('label'); fl.className = 'field'; fl.style.marginTop = '10px';
+  const sp = document.createElement('span'); const rg = document.createElement('input');
+  rg.type = 'range'; rg.min = '5'; rg.max = '100'; rg.value = String(Math.round(M.alphaBase[ei]/2.55));
+  sp.textContent = `Непрозрачность — ${rg.value}%`;
+  rg.oninput = () => { sp.textContent = `Непрозрачность — ${rg.value}%`; setAlpha([ei], rg.value/100); };
+  fl.append(sp, rg); ctrl.appendChild(fl);
+  const btns = document.createElement('div'); btns.className = 'btn-row';
+  btns.append(
+    mk('Так же весь класс', () => { setColor(M.byType.get(M.typeNames[ei]), pk.value); renderTree(); }),
+    mk('Исходный вид', () => { resetLook([ei]); renderInspector(psets); })
+  );
+  ctrl.appendChild(btns); box.appendChild(ctrl);
+
+  if (psets === undefined){
+    const d = document.createElement('div'); d.className = 'empty'; d.textContent = 'Читаем свойства…';
+    box.appendChild(d);
+  } else if (!psets.length){
+    const d = document.createElement('div'); d.className = 'empty';
+    d.textContent = 'Свойства не включены в пакет.'; box.appendChild(d);
+  } else {
+    for (const ps of psets){
+      const det = document.createElement('details'); det.className = 'pset';
+      const sum = document.createElement('summary'); sum.textContent = ps.name;
+      const cnt = document.createElement('span');
+      cnt.style.cssText = 'margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)';
+      cnt.textContent = ps.rows.length; sum.appendChild(cnt);
+      const t = document.createElement('table');
+      for (const [k, v] of ps.rows){
+        const tr = document.createElement('tr');
+        const a = document.createElement('td'); a.textContent = k;
+        const b = document.createElement('td'); b.textContent = v || '—';
+        tr.append(a, b); t.appendChild(tr);
+      }
+      det.append(sum, t); box.appendChild(det);
+    }
+  }
+}
+function showProps(m){
+  if (M.selected < 0 || M.ids[M.selected] !== m.eid) return;
+  hide(); renderInspector(m.psets);
+}
+const mk = (t,f) => { const b = document.createElement('button'); b.className='btn'; b.textContent=t; b.onclick=f; return b; };
+const hex = (arr, ei) => '#' + [arr[ei*3],arr[ei*3+1],arr[ei*3+2]].map(v => v.toString(16).padStart(2,'0')).join('');
+
+/* ═══════════════════ дерево ═══════════════════ */
+const MAX_ITEMS = 300;
+function renderTree(filter){
+  const tree = document.getElementById('tree'); tree.innerHTML = '';
+  const f = (filter||'').trim().toLowerCase();
+  for (const t of [...M.byType.keys()].sort()){
+    let ids = M.byType.get(t);
+    if (f) ids = ids.filter(i => (M.names[i]||'').toLowerCase().includes(f) || (M.guids[i]||'').toLowerCase().includes(f));
+    if (!ids.length) continue;
+    const wrap = document.createElement('div'); wrap.className = 'cls' + (f ? ' open' : '');
+    const head = document.createElement('button'); head.className = 'cls-head';
+    head.onclick = ev => { if (!ev.target.closest('input,.eye')) wrap.classList.toggle('open'); };
+    const car = document.createElement('span'); car.className='caret'; car.textContent='▶';
+    const sw = document.createElement('input'); sw.type='color'; sw.className='swatch';
+    sw.value = hex(M.baseCol, ids[0]); sw.oninput = () => setColor(ids, sw.value);
+    const nm = document.createElement('span'); nm.className='name'; nm.textContent = t.replace(/^IFC/,'');
+    const ct = document.createElement('span'); ct.className='count'; ct.textContent = ids.length;
+    const eye = document.createElement('button'); eye.className='eye'; eye.textContent='●';
+    eye.onclick = ev => { ev.stopPropagation(); const off = eye.classList.toggle('off'); eye.textContent = off?'○':'●'; setVisible(ids, !off); };
+    head.append(car, sw, nm, ct, eye);
+    const items = document.createElement('div'); items.className='cls-items';
+    for (const ei of ids.slice(0, MAX_ITEMS)){
+      const b = document.createElement('button'); b.className='item'; b.dataset.ei = ei;
+      b.textContent = M.names[ei] || '(без имени)';
+      const s = document.createElement('span'); s.className='eid'; s.textContent = '#' + M.ids[ei];
+      b.appendChild(s);
+      b.onclick = () => { select(ei); zoomTo(ei); };
+      items.appendChild(b);
+    }
+    if (ids.length > MAX_ITEMS){
+      const d = document.createElement('div'); d.className='more';
+      d.textContent = `показано ${MAX_ITEMS} из ${ids.length} — уточните поиск`;
+      items.appendChild(d);
+    }
+    wrap.append(head, items); tree.appendChild(wrap);
+  }
+}
+let searchTimer;
+document.getElementById('search').oninput = e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => renderTree(e.target.value), 200);
+};
+
+/* ═══════════════════ свойства и раскраска ═══════════════════ */
+document.getElementById('indexBtn').onclick = async () => {
+  if (M.propIndex.size){ fillPropSelect(); return; }
+  if (M.source && M.source.isPack){ alert('В пакете нет свойств. Пересоберите .rvpack из .ifc.'); return; }
+  phase('Читаем наборы свойств', 0);
+  try{
+    if (!M.parsedForProps){
+      const buf = await sourceBuffer();
+      await send({cmd:'parse', buffer:buf, geometry:false});
+    }
+    await send({cmd:'index'});
+  }catch(err){ fail(err.message); }
+};
+function onIndex(m){
+  hide();
+  M.propIndex = new Map();
+  for (const r of m.keys){
+    const dict = [], dm = new Map();
+    const v = new Uint32Array(r.idx.length);
+    for (let i = 0; i < r.idx.length; i++){
+      const s = r.vals[i] == null ? '' : String(r.vals[i]);
+      let j = dm.get(s);
+      if (j === undefined){ j = dict.length; dict.push(s); dm.set(s, j); }
+      v[i] = j;
+    }
+    M.propIndex.set(r.key, {key:r.key, idx:r.idx, v, vdict:dict});
+  }
+  fillPropSelect();
+  log(`Параметров найдено: ${m.keys.length}`);
+  if (M.selected >= 0) renderInspector(psetsFromIndex(M.selected));
+}
+function fillPropSelect(){
+  const sel = document.getElementById('propSelect');
+  sel.innerHTML = '<option value="">— выберите —</option>';
+  for (const k of M.propIndex.keys()){
+    const o = document.createElement('option'); o.value = k; o.textContent = k; sel.appendChild(o);
+  }
+  sel.onchange = () => paintBy(sel.value);
+}
+function paintBy(key){
+  const rec = M.propIndex.get(key); if (!rec) return;
+  const groups = new Map(); const has = new Uint8Array(M.nElem);
+  for (let i = 0; i < rec.idx.length; i++){
+    const ei = rec.idx[i]; has[ei] = 1;
+    const g = rec.v[i];
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(ei);
+  }
+  const none = [];
+  for (let i = 0; i < M.nElem; i++) if (!has[i]) none.push(i);
+  const sorted = [...groups.entries()].sort((a,b) => b[1].length - a[1].length)
+                   .map(([g, ids]) => [rec.vdict[g] || '(пусто)', ids]);
+  if (none.length) sorted.push(['(нет параметра)', none]);
+  const legend = document.getElementById('legend'); legend.innerHTML = '';
+  sorted.forEach(([v, ids], i) => {
+    const color = v === '(нет параметра)' ? '#aab4c0' : PALETTE[i % PALETTE.length];
+    setColor(ids, color);
+    const row = document.createElement('div');
+    const sw = document.createElement('i'); sw.style.background = color;
+    const tx = document.createElement('span'); tx.textContent = v; tx.title = v;
+    const ct = document.createElement('b'); ct.textContent = ids.length;
+    row.append(sw, tx, ct);
+    row.onclick = () => { setVisible(range(M.nElem), false); setVisible(ids, true); resetEyes(); };
+    legend.appendChild(row);
+  });
+  renderTree();
+}
+const range = n => { const a = new Array(n); for (let i = 0; i < n; i++) a[i] = i; return a; };
+document.getElementById('resetColors').onclick = () => {
+  resetLook(range(M.nElem));
+  document.getElementById('legend').innerHTML = '';
+  renderTree();
+};
+
+/* ═══════════════════ вид ═══════════════════ */
+document.getElementById('isolateBtn').onclick = () => {
+  if (M.selected < 0) return;
+  setVisible(range(M.nElem), false); setVisible([M.selected], true); resetEyes();
+};
+document.getElementById('ghostBtn').onclick = () => {
+  if (M.selected < 0) return;
+  for (let i = 0; i < M.nElem; i++) if (i !== M.selected && !M.hidden[i]) writeAlpha(i, 40);
+  flush();
+};
+document.getElementById('showAllBtn').onclick = () => {
+  for (let i = 0; i < M.nElem; i++){ M.hidden[i] = 0; writeAlpha(i, M.alphaBase[i]); }
+  flush(); resetEyes();
+};
+const glassRange = document.getElementById('glassRange');
+function applyGlass(){
+  const pct = Number(glassRange.value);
+  const v = Math.round(pct * 2.55);
+  document.getElementById('glassLabel').textContent = `Полупрозрачные — ${pct}%`;
+  for (const ei of M.glass){
+    M.alphaBase[ei] = v;
+    if (!M.hidden[ei] && ei !== M.selected) writeAlpha(ei, v);
+  }
+  flush();
+  document.getElementById('opaqueBtn').textContent =
+    pct >= 100 ? 'Вернуть прозрачность' : 'Сделать непрозрачными';
+}
+glassRange.oninput = applyGlass;
+document.getElementById('opaqueBtn').onclick = () => {
+  glassRange.value = Number(glassRange.value) >= 100 ? String(Math.round(MIN_ALPHA / 2.55)) : '100';
+  applyGlass();
+};
+
+function resetEyes(){ document.querySelectorAll('.eye').forEach(e => { e.classList.remove('off'); e.textContent='●'; }); }
+document.getElementById('fitBtn').onclick = fitView;
+document.getElementById('axisBtn').onclick = e => {
+  const z = root.rotation.x !== 0;
+  root.rotation.x = z ? 0 : -Math.PI/2;
+  e.currentTarget.textContent = 'Ось вверх: ' + (z ? 'Y' : 'Z');
+  fitView();
+};
+document.getElementById('sideBtn').onclick = e => {
+  material.side = material.side === THREE.FrontSide ? THREE.DoubleSide : THREE.FrontSide;
+  material.needsUpdate = true;
+  e.currentTarget.textContent = 'Грани: ' + (material.side === THREE.FrontSide ? 'лицевые' : 'обе');
+  invalidate();
+};
+
+/* ═══════════════════ схема цветов ═══════════════════ */
+document.getElementById('exportBtn').onclick = () => {
+  const out = {};
+  for (let i = 0; i < M.nElem; i++){
+    if (!M.guids[i]) continue;
+    out[M.guids[i]] = {color:hex(M.baseCol,i), opacity:+(M.alphaBase[i]/255).toFixed(3)};
+  }
+  download(new Blob([JSON.stringify(out, null, 2)], {type:'application/json'}), 'color-scheme.json');
+};
+document.getElementById('importBtn').onclick = () => document.getElementById('importInput').click();
+document.getElementById('importInput').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try{
+    const data = JSON.parse(await f.text());
+    let hit = 0;
+    for (const [guid, v] of Object.entries(data)){
+      const ei = M.guidMap.get(guid); if (ei === undefined) continue;
+      hit++;
+      const c = typeof v === 'string' ? v : v.color;
+      if (c) setColor([ei], c);
+      if (v && v.opacity !== undefined) setAlpha([ei], v.opacity);
+    }
+    renderTree();
+    alert(`Применено к ${hit} из ${Object.keys(data).length} GUID.`);
+  }catch(err){ alert('Не похоже на схему цветов: ' + err.message); }
+  e.target.value = '';
+};
+function download(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+/* ═══════════════════ подготовка пакета ═══════════════════ */
+document.getElementById('packBtn').onclick = async () => {
+  try{
+    if (!M.propIndex.size && M.source && !M.source.isPack){
+      if (confirm('Включить в пакет наборы свойств? Это займёт время, зато вьюеру не понадобится .ifc.')){
+        phase('Читаем наборы свойств', 0);
+        if (!M.parsedForProps){
+          const buf = await sourceBuffer();
+          await send({cmd:'parse', buffer:buf, geometry:false});
+        }
+        await send({cmd:'index'});
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+    phase('Собираем пакет', .5);
+    await new Promise(r => setTimeout(r, 20));
+    const bytes = packModel();
+    const name = (M.label || 'model').replace(/\.ifc$/i, '') + '.rvpack';
+    download(new Blob([bytes], {type:'application/octet-stream'}), name);
+    note('Пакет собран', `${name}, ${(bytes.length/1048576).toFixed(1)} МБ. Положите его на сервер и пропишите в models.json.`);
+    log(`Пакет ${name}: ${(bytes.length/1048576).toFixed(1)} МБ`);
+  }catch(err){ fail(err.message); }
+};
+document.getElementById('checkBtn').onclick = async () => {
+  logLines.length = 0;
+  phase('Проверяем окружение', 0);
+  log('Протокол: ' + location.protocol + (location.protocol === 'file:' ? '  ← нужен http' : ''));
+  log('WebGL2: ' + (renderer.capabilities.isWebGL2 ? 'да' : 'нет'));
+  try{ await boot(); note('Окружение в порядке', 'Разбор .ifc доступен.'); }
+  catch(err){ fail(err.message); }
+};
+const fi = document.getElementById('fileInput');
+document.getElementById('openBtn').onclick = () => fi.click();
+fi.onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; };
+if (!LOCK_TO_SERVER){
+  stage.addEventListener('dragover', e => e.preventDefault());
+  stage.addEventListener('drop', e => {
+    e.preventDefault();
+    const f = [...e.dataTransfer.files].find(x => /\.(ifc|rvpack)$/i.test(x.name));
+    if (f) loadFile(f);
+  });
+}
+
+/* ═══════════════════ старт ═══════════════════ */
+document.getElementById('adminBlock').hidden = !SHOW_ADMIN;
+
+(async function init(){
+  phase('Ищем модель', .01);
+  let models = FALLBACK_MODELS, def = null;
+  try{
+    const base = new URL(MANIFEST_URL, location.href);
+    const r = await fetch(base.href, {cache:'no-cache'});
+    if (r.ok){
+      const j = await r.json();
+      if (Array.isArray(j.models) && j.models.length){
+        models = j.models.map(m => ({...m, url: new URL(m.url, base).href}));
+        def = j.default || null;
+      }
+      log('Манифест прочитан: моделей ' + models.length);
+    } else log('Манифест: HTTP ' + r.status);
+  }catch(err){ log('Манифест недоступен: ' + err.message); }
+
+  const sel = document.getElementById('modelSelect');
+  if (models.length){
+    document.getElementById('modelBlock').hidden = models.length < 2;
+    for (const m of models){
+      const o = document.createElement('option');
+      o.value = m.url; o.textContent = m.name || m.id || m.url;
+      sel.appendChild(o);
+    }
+    sel.onchange = () => loadUrl(sel.value, sel.selectedOptions[0].textContent);
+  }
+
+  const q = new URLSearchParams(location.search).get('model');
+  let target = null, label = null;
+  if (q){
+    const byId = models.find(m => m.id === q);
+    if (byId){ target = byId.url; label = byId.name; }
+    else if (!LOCK_TO_SERVER){ target = new URL(q, location.href).href; }
+    else log('Модель "' + q + '" в манифесте не значится');
+  }
+  if (!target && models.length){
+    const d = models.find(m => m.id === def) || models[0];
+    target = d.url; label = d.name;
+  }
+  if (target){
+    sel.value = target;
+    await loadUrl(target, label);
+  } else {
+    note('Модель не задана', 'Пропишите models.json рядом с вьюером или откройте файл с диска в блоке «Подготовка».');
+    document.getElementById('brandSub').textContent = 'Источник не настроен';
+  }
+})();
+</script>
+</body>
+</html>

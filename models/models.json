@@ -1,0 +1,10 @@
+{
+  "default": "facade_V3_demo",
+  "models": [
+    {
+      "id": "facade_V3_demo",
+      "name": "Фасад, демонстрационная модель",
+      "url": "facade_V3_demo.rvpack"
+    }
+  ]
+}
