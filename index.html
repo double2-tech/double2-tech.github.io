@@ -41,6 +41,16 @@
   .btn-row{display:flex;gap:6px;flex-wrap:wrap}
   .btn-row .btn{flex:1 1 auto}
   .muted{font-size:11px;color:var(--ink-3);margin-top:6px}
+  .chk{display:flex;align-items:center;gap:7px;font-size:12px;margin-bottom:8px;cursor:pointer}
+  .chk input{accent-color:var(--blue)}
+  .seg{display:flex;margin-top:2px}
+  .seg button{flex:1;border:1px solid var(--line);background:#fff;padding:6px 4px;font-size:11.5px;
+              border-radius:0;border-left-width:0;line-height:1.25}
+  .seg button:first-child{border-left-width:1px;border-radius:3px 0 0 3px}
+  .seg button:last-child{border-radius:0 3px 3px 0}
+  .seg button:hover{background:var(--blue-soft)}
+  .seg button.on{color:#fff;font-weight:500;border-color:transparent}
+  .legend div.pick{cursor:pointer}
 
   .stats{display:grid;grid-template-columns:1fr auto;gap:4px 10px;font-size:12px;margin:0}
   .stats dt{color:var(--ink-3);margin:0}
@@ -153,6 +163,18 @@
         <div class="legend" id="legend"></div>
       </div>
 
+      <div class="block" id="statusBlock" hidden>
+        <h2>Статусы</h2>
+        <label class="chk"><input type="checkbox" id="statusPaint" checked><span>Показывать цветом</span></label>
+        <div class="legend" id="statusLegend"></div>
+        <div class="btn-row" style="margin-top:9px">
+          <button class="btn" id="stExport">Выгрузить</button>
+          <button class="btn" id="stImport">Загрузить</button>
+          <input type="file" id="stImportInput" accept=".json" hidden>
+        </div>
+        <div class="muted" id="stLocal"></div>
+      </div>
+
       <div class="block" id="viewBlock" hidden>
         <h2>Вид</h2>
         <div class="btn-row">
@@ -184,7 +206,7 @@
         <h2>Подготовка</h2>
         <div class="btn-row">
           <button class="btn" id="openBtn">Открыть .ifc с диска</button>
-          <input type="file" id="fileInput" accept=".ifc,.IFC,.rvpack" hidden>
+          <input type="file" id="fileInput" accept=".ifc,.IFC,.rvpack,.enc" hidden>
         </div>
         <div class="btn-row" style="margin-top:6px">
           <button class="btn" id="packBtn" disabled>Собрать .rvpack</button>
@@ -564,6 +586,14 @@ const PALETTE = ['#1f5fa9','#c2410c','#15803d','#7c3aed','#0e7490','#b91c1c',
                  '#a16207','#be185d','#4d7c0f','#4338ca','#0f766e','#9a3412'];
 const HILITE = [0x4c, 0xa6, 0xff];
 
+/* Жизненный цикл элемента. Порядок важен: индекс хранится в M.status. */
+const STATUS = [
+  {id:'design',    name:'На этапе проектирования', short:'Проектируется', color:'#98a6b4'},
+  {id:'made',      name:'Изготовлен',              short:'Изготовлен',    color:'#e0912f'},
+  {id:'installed', name:'Смонтирован',             short:'Смонтирован',   color:'#3ba55d'},
+];
+const STATUS_BY_ID = new Map(STATUS.map((s, i) => [s.id, i]));
+
 /* Базовый цвет всех элементов. null — оставить материалы из IFC. */
 const UNIFORM_COLOR = '#c6cbd1';
 
@@ -671,6 +701,7 @@ const M = {
   byType:new Map(), guidMap:new Map(),
   hidden:null, baseCol:null, origCol:null, alphaBase:null, origAlpha:null,
   selected:-1, propIndex:new Map(), tris:0, instances:0, parsedForProps:false,
+  status:null, statusKey:'', lastPsets:undefined,
 };
 let needsRender = true, dirty = new Set();
 const invalidate = () => needsRender = true;
@@ -747,6 +778,75 @@ async function fetchProgress(url, label, from, to){
   const all = new Uint8Array(got);
   let o = 0; for (const p of parts){ all.set(p, o); o += p.length; }
   return {buf: all.buffer, tag};
+}
+
+/* ═══════════════════ шифрование пакета ═══════════════════ */
+/* Заголовок: "RVPKENC1" | uint32 итераций | 16 байт соли | 12 байт IV | шифротекст.
+   PBKDF2-SHA256 → AES-GCM-256. Неверный пароль отсекается проверкой
+   подлинности GCM, до разбора данных дело не доходит. */
+const ENC_MAGIC = 'RVPKENC1';
+const isEnc = u => /\.enc($|\?)/i.test(u);
+
+async function decryptPack(buf, password){
+  const u8 = new Uint8Array(buf);
+  if (new TextDecoder().decode(u8.subarray(0, 8)) !== ENC_MAGIC)
+    throw new Error('Файл не похож на зашифрованный пакет');
+  const iter = new DataView(buf).getUint32(8, true);
+  const salt = u8.slice(12, 28), iv = u8.slice(28, 40), body = u8.subarray(40);
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  const key  = await crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt, iterations:iter, hash:'SHA-256'},
+    base, {name:'AES-GCM', length:256}, false, ['decrypt']);
+  return crypto.subtle.decrypt({name:'AES-GCM', iv}, key, body);
+}
+
+function askPassword(url, err){
+  return new Promise(resolve => {
+    const o = shell();
+    const h = document.createElement('h3'); h.textContent = 'Модель защищена паролем';
+    const p = document.createElement('p');
+    p.textContent = err || 'Введите пароль, который вам передали вместе со ссылкой.';
+    if (err) p.style.color = '#ff8f8f';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;align-items:center';
+    const inp = document.createElement('input');
+    inp.type = 'password'; inp.autocomplete = 'current-password';
+    inp.style.cssText = 'padding:7px 9px;border:1px solid #4b555f;border-radius:3px;background:#1b1f24;color:#e8ecf0;font:inherit;width:230px';
+    const go = document.createElement('button');
+    go.className = 'btn primary'; go.textContent = 'Открыть';
+    const rem = document.createElement('label');
+    rem.style.cssText = 'display:flex;gap:6px;align-items:center;color:#98a5b2;font-size:12px;cursor:pointer';
+    const cb = document.createElement('input'); cb.type = 'checkbox';
+    rem.append(cb, document.createTextNode('запомнить на этом устройстве'));
+    const submit = () => { if (inp.value) resolve({pass:inp.value, remember:cb.checked}); };
+    go.onclick = submit;
+    inp.onkeydown = e => { if (e.key === 'Enter') submit(); };
+    row.append(inp, go);
+    o.append(h, p, row, rem);
+    inp.focus();
+  });
+}
+
+async function decryptInteractive(buf, url){
+  const key = 'rv-pass:' + url;
+  const saved = sessionStorage.getItem(key) || localStorage.getItem(key);
+  if (saved){
+    try { phase('Расшифровываем', .8); return await decryptPack(buf, saved); }
+    catch { sessionStorage.removeItem(key); localStorage.removeItem(key); }
+  }
+  let err = '';
+  for (;;){
+    const {pass, remember} = await askPassword(url, err);
+    try {
+      phase('Расшифровываем', .8);
+      const out = await decryptPack(buf, pass);
+      sessionStorage.setItem(key, pass);
+      if (remember) localStorage.setItem(key, pass); else localStorage.removeItem(key);
+      return out;
+    } catch {
+      err = 'Неверный пароль. Попробуйте ещё раз.';
+    }
+  }
 }
 
 /* ═══════════════════ формат .rvpack ═══════════════════ */
@@ -1001,18 +1101,20 @@ function setAlpha(list, a){
 /* ═══════════════════ загрузка модели ═══════════════════ */
 async function loadUrl(url, label){
   reset();
-  M.source = {kind:'url', url, isPack:/\.rvpack($|\?)/i.test(url)};
+  M.source = {kind:'url', url, isPack:/\.rvpack(\.enc)?($|\?)/i.test(url), enc:isEnc(url)};
   t0 = performance.now(); logLines.length = 0;
   log('Источник: ' + url);
   try{
     if (M.source.isPack){
-      const {buf} = await fetchProgress(url, 'Скачиваем пакет', .05, .75);
-      phase('Разбираем пакет', .8);
+      const {buf} = await fetchProgress(url, 'Скачиваем пакет', .05, .7);
+      const raw = M.source.enc ? await decryptInteractive(buf, url) : buf;
+      phase('Разбираем пакет', .85);
       await new Promise(r => setTimeout(r, 20));
-      const {chunks, meta, props} = unpackModel(buf);
+      const {chunks, meta, props} = unpackModel(raw);
       for (const c of chunks){ keep(c); if (c.type === 'inst') addInstanced(c); else addBatch(c); }
       keep(meta);
       if (props.length){ M.propIndex = new Map(props.map(p => [p.key, p])); fillPropSelect(); }
+      M.statusFile = await fetchStatusFile(url);
       finish(meta, label || url.split('/').pop());
     } else {
       const {buf, tag} = await fetchProgress(url, 'Скачиваем IFC', .05, .45);
@@ -1034,11 +1136,12 @@ async function loadUrl(url, label){
 
 async function loadFile(file){
   reset();
-  M.source = {kind:'file', file, isPack:/\.rvpack$/i.test(file.name)};
+  M.source = {kind:'file', file, isPack:/\.rvpack(\.enc)?$/i.test(file.name), enc:isEnc(file.name)};
   t0 = performance.now(); logLines.length = 0;
   log(`Файл ${file.name}, ${(file.size/1048576).toFixed(1)} МБ`);
   try{
-    const buf = await file.arrayBuffer();
+    const buf0 = await file.arrayBuffer();
+    const buf = M.source.enc ? await decryptInteractive(buf0, file.name) : buf0;
     if (M.source.isPack){
       const {chunks, meta, props} = unpackModel(buf);
       for (const c of chunks){ keep(c); if (c.type === 'inst') addInstanced(c); else addBatch(c); }
@@ -1057,7 +1160,8 @@ function reset(){
   M.meshes = []; M.refs = []; M.byType = new Map(); M.guidMap = new Map();
   M.selected = -1; M.tris = 0; M.instances = 0; M.parsedForProps = false;
   M.propIndex = new Map(); pending = []; cacheBytes = 0; propsWaiting = null;
-  M.cacheKey = null; M.label = ''; M.glass = [];
+  M.cacheKey = null; M.label = ''; M.glass = []; M.status = null; M.lastPsets = undefined; M.statusFile = null;
+  document.getElementById('statusBlock').hidden = true;
   document.getElementById('glassField').hidden = true;
   document.getElementById('glassRow').hidden = true;
   if (grid){ scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); grid = null; }
@@ -1070,6 +1174,7 @@ function reset(){
 }
 
 function finish(m, label){
+  if (label) M.label = label;
   M.nElem = m.nElem; M.ids = m.ids; M.guids = m.guids; M.names = m.names;
   M.typeNames = m.typeNames; M.ebox = m.ebox; M.tris = m.tris;
   M.hidden = new Uint8Array(M.nElem);
@@ -1131,6 +1236,7 @@ function finish(m, label){
 
   log(`Готово: ${M.nElem} элементов, ${M.meshes.length} draw calls`);
   log(`Полупрозрачных элементов: ${M.glass.length}; сглаживание стекла: ${SMOOTH_GLASS ? 'MSAA ×' + MSAA : 'дизеринг'}`);
+  initStatuses();
   renderTree(); fitView(); hide(); invalidate();
   if (M.cacheKey) saveCache(M.cacheKey, m);
 }
@@ -1276,7 +1382,9 @@ async function sourceBuffer(){
 }
 
 /* ═══════════════════ инспектор ═══════════════════ */
+function refreshInspector(){ if (M.selected >= 0) renderInspector(M.lastPsets); }
 function renderInspector(psets){
+  M.lastPsets = psets;
   const box = document.getElementById('inspector');
   const hint = document.getElementById('selHint');
   box.innerHTML = '';
@@ -1302,6 +1410,31 @@ function renderInspector(psets){
   add('Имя', M.names[ei]); add('Класс', M.typeNames[ei]);
   add('GlobalId', M.guids[ei], true); add('ExpressID', String(M.ids[ei]));
   head.appendChild(dl); box.appendChild(head);
+
+  if (M.status){
+    const sb = document.createElement('div'); sb.className = 'block';
+    const sh = document.createElement('h2'); sh.textContent = 'Статус'; sb.appendChild(sh);
+    const seg = document.createElement('div'); seg.className = 'seg';
+    STATUS.forEach((st, k) => {
+      const b = document.createElement('button');
+      b.textContent = st.short;
+      b.title = st.name + '  (клавиша ' + (k+1) + ')';
+      if (M.status[ei] === k){ b.classList.add('on'); b.style.background = st.color; }
+      b.onclick = () => setStatus([ei], k);
+      seg.appendChild(b);
+    });
+    sb.appendChild(seg);
+    const row = document.createElement('div'); row.className = 'btn-row'; row.style.marginTop = '7px';
+    row.append(
+      mk('Весь класс ' + M.typeNames[ei].replace(/^IFC/, ''), () => setStatus(M.byType.get(M.typeNames[ei]), M.status[ei])),
+      mk('Все видимые', () => {
+        const ids = []; for (let i = 0; i < M.nElem; i++) if (!M.hidden[i]) ids.push(i);
+        if (confirm(`Присвоить статус «${STATUS[M.status[ei]].name}» видимым элементам (${ids.length})?`)) setStatus(ids, M.status[ei]);
+      })
+    );
+    sb.appendChild(row);
+    box.appendChild(sb);
+  }
 
   const ctrl = document.createElement('div'); ctrl.className = 'block';
   const h2 = document.createElement('h2'); h2.textContent = 'Оформление'; ctrl.appendChild(h2);
@@ -1471,6 +1604,166 @@ document.getElementById('resetColors').onclick = () => {
   document.getElementById('legend').innerHTML = '';
   renderTree();
 };
+
+/* Опубликованный срез статусов: <адрес модели> + .status.json, рядом с ней.
+   Нет файла — не беда, работаем только с локальными отметками. */
+async function fetchStatusFile(modelUrl){
+  const u = modelUrl.replace(/\.(rvpack|rvpack\.enc)(\?.*)?$/i, '') + '.status.json';
+  try{
+    const r = await fetch(u, {cache:'no-cache'});
+    if (!r.ok) return null;
+    const doc = await r.json();
+    log('Подхвачен файл статусов: ' + u.split('/').pop());
+    return doc;
+  }catch{ return null; }
+}
+
+/* ═══════════════════ статусы ═══════════════════ */
+/* Значение хранится по индексу элемента, наружу выдаётся по GlobalId —
+   он переживает переэкспорт модели, индексы нет. */
+
+const statusPaintBox = document.getElementById('statusPaint');
+let statusDirty = 0;                       // сколько правок не выгружено
+
+function initStatuses(){
+  M.status = new Uint8Array(M.nElem);      // 0 = проектирование
+  M.statusKey = 'rv-status:' + (M.source && M.source.url ? M.source.url : (M.label || 'local'));
+  statusDirty = 0;
+  document.getElementById('statusBlock').hidden = false;
+
+  if (M.statusFile) applyStatusMap(M.statusFile);   // опубликованный срез рядом с моделью
+  try{
+    const local = JSON.parse(localStorage.getItem(M.statusKey) || 'null');
+    if (local) applyStatusMap(local);                // локальные отметки поверх
+  }catch{}
+  countMarked();
+
+  paintBase();
+  renderStatusLegend();
+}
+
+function countMarked(){
+  statusDirty = 0;
+  for (let i = 0; i < M.nElem; i++) if (M.status[i]) statusDirty++;
+}
+
+function applyStatusMap(doc){
+  const map = doc && doc.statuses ? doc.statuses : doc;
+  if (!map || typeof map !== 'object') return 0;
+  let hit = 0;
+  for (const [guid, id] of Object.entries(map)){
+    const ei = M.guidMap.get(guid);
+    const k = STATUS_BY_ID.get(id);
+    if (ei === undefined || k === undefined) continue;
+    M.status[ei] = k; hit++;
+  }
+  return hit;
+}
+
+function statusDoc(){
+  const statuses = {};
+  for (let ei = 0; ei < M.nElem; ei++){
+    if (!M.status[ei]) continue;           // проектирование — состояние по умолчанию, не пишем
+    const g = M.guids[ei];
+    if (g) statuses[g] = STATUS[M.status[ei]].id;
+  }
+  return {
+    model: M.label || '',
+    updated: new Date().toISOString(),
+    legend: Object.fromEntries(STATUS.map(x => [x.id, x.name])),
+    statuses,
+  };
+}
+
+function saveLocal(){
+  try{
+    localStorage.setItem(M.statusKey, JSON.stringify(statusDoc()));
+  }catch(err){ log('Статусы не сохранились локально: ' + err.message); }
+}
+
+function setStatus(list, k){
+  if (!M.status || !list.length) return;
+  for (const ei of list) M.status[ei] = k;
+  countMarked();
+  saveLocal();
+  if (statusPaintBox.checked) setColor(list, STATUS[k].color);
+  renderStatusLegend();
+  refreshInspector();
+}
+
+/* Базовая окраска: либо по статусу, либо исходная. */
+function paintBase(){
+  if (!M.nElem) return;
+  if (statusPaintBox.checked){
+    for (let k = 0; k < STATUS.length; k++){
+      const ids = [];
+      for (let i = 0; i < M.nElem; i++) if (M.status[i] === k) ids.push(i);
+      if (ids.length) setColor(ids, STATUS[k].color);
+    }
+  } else {
+    for (let ei = 0; ei < M.nElem; ei++){
+      M.baseCol[ei*3]=M.origCol[ei*3]; M.baseCol[ei*3+1]=M.origCol[ei*3+1]; M.baseCol[ei*3+2]=M.origCol[ei*3+2];
+      if (ei !== M.selected) writeColor(ei, M.origCol[ei*3], M.origCol[ei*3+1], M.origCol[ei*3+2]);
+    }
+    flush();
+  }
+  renderTree();
+}
+statusPaintBox.onchange = paintBase;
+
+function renderStatusLegend(){
+  const box = document.getElementById('statusLegend');
+  box.innerHTML = '';
+  if (!M.status) return;
+  const cnt = new Array(STATUS.length).fill(0);
+  for (let i = 0; i < M.nElem; i++) cnt[M.status[i]]++;
+  STATUS.forEach((st, k) => {
+    const row = document.createElement('div');
+    row.className = 'pick';
+    row.title = 'Показать только эти элементы';
+    const sw = document.createElement('i'); sw.style.background = st.color;
+    const tx = document.createElement('span'); tx.textContent = st.name;
+    const ct = document.createElement('b');
+    ct.textContent = `${cnt[k]}  ${M.nElem ? Math.round(cnt[k]/M.nElem*100) : 0}%`;
+    row.append(sw, tx, ct);
+    row.onclick = () => {
+      const ids = []; for (let i = 0; i < M.nElem; i++) if (M.status[i] === k) ids.push(i);
+      setVisible(range(M.nElem), false); setVisible(ids, true); resetEyes();
+    };
+    box.appendChild(row);
+  });
+  const l = document.getElementById('stLocal');
+  l.textContent = statusDirty
+    ? `Отмечено элементов: ${statusDirty}. Выгрузите файл, чтобы поделиться.`
+    : 'Отметок пока нет.';
+}
+
+document.getElementById('stExport').onclick = () => {
+  const doc = statusDoc();
+  const n = Object.keys(doc.statuses).length;
+  if (!n) return alert('Отмеченных элементов нет.');
+  const base = (M.label || 'model').replace(/\.(rvpack|enc|ifc)$/gi, '').replace(/\.rvpack$/i, '');
+  download(new Blob([JSON.stringify(doc, null, 2)], {type:'application/json'}), base + '.status.json');
+};
+document.getElementById('stImport').onclick = () => document.getElementById('stImportInput').click();
+document.getElementById('stImportInput').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try{
+    const doc = JSON.parse(await f.text());
+    const hit = applyStatusMap(doc);
+    countMarked(); saveLocal(); paintBase(); renderStatusLegend(); refreshInspector();
+    alert(`Применено к ${hit} элементам.`);
+  }catch(err){ alert('Не похоже на файл статусов: ' + err.message); }
+  e.target.value = '';
+};
+
+/* цифры 1–3 на выбранном элементе */
+window.addEventListener('keydown', e => {
+  if (M.selected < 0 || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  const k = '123'.indexOf(e.key);
+  if (k >= 0) setStatus([M.selected], k);
+});
 
 /* ═══════════════════ вид ═══════════════════ */
 document.getElementById('isolateBtn').onclick = () => {
