@@ -1012,7 +1012,9 @@ function addInstanced(ch){
     geo.setAttribute('aCol',   new THREE.InstancedBufferAttribute(cols.subarray(no*3,(no+nc)*3), 3, true));
     geo.setAttribute('aAlpha', new THREE.InstancedBufferAttribute(alp.subarray(no, no+nc), 1, true));
     geo.setAttribute('aId',    new THREE.InstancedBufferAttribute(ids.subarray(no, no+nc), 1));
-    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(sph[g*4],sph[g*4+1],sph[g*4+2]), sph[g*4+3]);
+    const sc = new THREE.Vector3(sph[g*4], sph[g*4+1], sph[g*4+2]), sr = sph[g*4+3];
+    geo.boundingSphere = new THREE.Sphere(sc, sr);
+    geo.boundingBox = new THREE.Box3(sc.clone().subScalar(sr), sc.clone().addScalar(sr));
     const mesh = new THREE.InstancedMesh(geo, material, nc);
     mesh.instanceMatrix = new THREE.InstancedBufferAttribute(mats.subarray(no*16,(no+nc)*16), 16);
     mesh.computeBoundingSphere();
@@ -1114,8 +1116,9 @@ async function loadUrl(url, label){
       for (const c of chunks){ keep(c); if (c.type === 'inst') addInstanced(c); else addBatch(c); }
       keep(meta);
       if (props.length){ M.propIndex = new Map(props.map(p => [p.key, p])); fillPropSelect(); }
-      M.statusFile = await fetchStatusFile(url);
       finish(meta, label || url.split('/').pop());
+      const st = await fetchStatusFile(url);
+      if (st){ M.statusFile = st; initStatuses(); }
     } else {
       const {buf, tag} = await fetchProgress(url, 'Скачиваем IFC', .05, .45);
       const cached = await cacheGet(url + '|' + tag);
@@ -1273,8 +1276,29 @@ async function saveCache(key, meta){
 }
 
 /* ═══════════════════ камера ═══════════════════ */
+function modelBox(){
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  if (M.ebox && M.nElem){
+    const b = M.ebox;
+    const mn = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const mx = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    for (let i = 0; i < M.nElem; i++){
+      if (!(b[i*6] <= b[i*6+3])) continue;            // пустая коробка
+      if (b[i*6]   < mn.x) mn.x = b[i*6];
+      if (b[i*6+1] < mn.y) mn.y = b[i*6+1];
+      if (b[i*6+2] < mn.z) mn.z = b[i*6+2];
+      if (b[i*6+3] > mx.x) mx.x = b[i*6+3];
+      if (b[i*6+4] > mx.y) mx.y = b[i*6+4];
+      if (b[i*6+5] > mx.z) mx.z = b[i*6+5];
+    }
+    if (mn.x <= mx.x) return box.set(mn, mx).applyMatrix4(root.matrixWorld);
+  }
+  return box.setFromObject(root);
+}
+
 function fitView(){
-  const box = new THREE.Box3().setFromObject(root);
+  const box = modelBox();
   if (box.isEmpty()) return;
   const c = box.getCenter(new THREE.Vector3());
   const r = Math.max(box.getSize(new THREE.Vector3()).length()/2, 1);
