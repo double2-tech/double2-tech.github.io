@@ -9,6 +9,7 @@
     --paper:#eef1f4; --panel:#f8fafb; --line:#c9d2da; --line-soft:#dde4ea;
     --ink:#16212e; --ink-2:#53637a; --ink-3:#8494a8;
     --blue:#1f5fa9; --blue-soft:#dbe7f5; --amber:#a86a12; --red:#a11b1b;
+    --space:#252a30;   /* пространство модели, как в AutoCAD */
     --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
     --sans:"Inter","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
   }
@@ -78,19 +79,20 @@
   .legend span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .legend b{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);font-weight:400}
 
-  #stage{position:relative;min-width:0;background:#dfe4e9}
+  #stage{position:relative;min-width:0;background:var(--space)}
   #c{display:block;width:100%;height:100%}
   #toolbar{position:absolute;top:10px;left:10px;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 20px)}
-  #toolbar .btn{background:rgba(255,255,255,.92)}
-  #perf{position:absolute;bottom:10px;left:10px;font-family:var(--mono);font-size:11px;color:var(--ink-2);background:rgba(255,255,255,.82);padding:4px 8px;border-radius:3px;white-space:pre}
-  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:11px;text-align:center;padding:24px;background:rgba(223,228,233,.95)}
+  #toolbar .btn{background:rgba(44,51,59,.92);color:#d6dde4;border-color:#4b555f}
+  #toolbar .btn:hover:not(:disabled){background:#39434e;border-color:#6fa2d8}
+  #perf{position:absolute;bottom:10px;left:10px;font-family:var(--mono);font-size:11px;color:#8ea0b0;background:rgba(16,19,23,.6);padding:4px 8px;border-radius:3px;white-space:pre}
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:11px;text-align:center;padding:24px;background:rgba(29,34,39,.94)}
   #overlay.hidden{display:none}
-  #overlay h3{margin:0;font-size:16px;font-weight:600}
-  #overlay p{margin:0;max-width:52ch;color:var(--ink-2);font-size:12.5px}
-  #overlay.error h3{color:var(--red)}
-  .bar{width:230px;height:3px;background:var(--line);border-radius:2px;overflow:hidden}
-  .bar i{display:block;height:100%;background:var(--blue);width:0;transition:width .2s}
-  #log{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);text-align:left;white-space:pre-wrap;max-width:70ch;max-height:170px;overflow:auto;margin:0;background:rgba(255,255,255,.6);padding:8px 10px;border-radius:3px}
+  #overlay h3{margin:0;font-size:16px;font-weight:600;color:#e8ecf0}
+  #overlay p{margin:0;max-width:52ch;color:#98a5b2;font-size:12.5px}
+  #overlay.error h3{color:#ff8f8f}
+  .bar{width:230px;height:3px;background:#3c454f;border-radius:2px;overflow:hidden}
+  .bar i{display:block;height:100%;background:#4ca6ff;width:0;transition:width .2s}
+  #log{font-family:var(--mono);font-size:10.5px;color:#8695a4;text-align:left;white-space:pre-wrap;max-width:70ch;max-height:170px;overflow:auto;margin:0;background:rgba(255,255,255,.06);padding:8px 10px;border-radius:3px}
   #log:empty{display:none}
 
   .empty{padding:16px;color:var(--ink-3);font-size:12px}
@@ -560,7 +562,10 @@ const CACHE_MAX_MB = 500;
 const FREE_CPU_ARRAYS = true;
 const PALETTE = ['#1f5fa9','#c2410c','#15803d','#7c3aed','#0e7490','#b91c1c',
                  '#a16207','#be185d','#4d7c0f','#4338ca','#0f766e','#9a3412'];
-const HILITE = [0x2b, 0x7f, 0xff];
+const HILITE = [0x4c, 0xa6, 0xff];
+
+/* Базовый цвет всех элементов. null — оставить материалы из IFC. */
+const UNIFORM_COLOR = '#c6cbd1';
 
 const WORKER_SHIM = `
 let handle = null;
@@ -592,17 +597,17 @@ const stage  = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#dfe4e9');
+scene.background = new THREE.Color('#252a30');
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
 camera.position.set(20, 15, 20);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.12;
-scene.add(new THREE.HemisphereLight('#ffffff', '#93a0ad', 2.0));
-const key = new THREE.DirectionalLight('#ffffff', 1.8); key.position.set(1,2.4,1.2); scene.add(key);
-const fill = new THREE.DirectionalLight('#ffffff', .65); fill.position.set(-1.4,.8,-1); scene.add(fill);
+scene.add(new THREE.HemisphereLight('#ffffff', '#39424b', 1.5));
+const key = new THREE.DirectionalLight('#ffffff', 1.9); key.position.set(1,2.4,1.2); scene.add(key);
+const fill = new THREE.DirectionalLight('#ffffff', .55); fill.position.set(-1.4,.8,-1); scene.add(fill);
 const root = new THREE.Group(); root.rotation.x = -Math.PI/2; scene.add(root);
 let grid = null;
-const selBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#1f5fa9'));
+const selBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#4ca6ff'));
 selBox.visible = false; selBox.material.depthTest = false; root.add(selBox);
 
 /* Revit отдаёт стекло с альфой вплоть до 0.05 — на экране это почти пустота.
@@ -1079,6 +1084,14 @@ function finish(m, label){
     M.origCol[ei*3]=c[i*3]; M.origCol[ei*3+1]=c[i*3+1]; M.origCol[ei*3+2]=c[i*3+2];
     M.origAlpha[ei]=a[i]; M.alphaBase[ei]=a[i];
   }
+  if (UNIFORM_COLOR){
+    const u = new THREE.Color(UNIFORM_COLOR);
+    const ur = Math.round(u.r*255), ug = Math.round(u.g*255), ub = Math.round(u.b*255);
+    for (let ei = 0; ei < M.nElem; ei++){
+      M.origCol[ei*3] = ur; M.origCol[ei*3+1] = ug; M.origCol[ei*3+2] = ub;
+      writeColor(ei, ur, ug, ub);
+    }
+  }
   M.baseCol.set(M.origCol);
 
   // Полупрозрачные элементы: запоминаем их и поднимаем альфу до читаемой.
@@ -1164,9 +1177,9 @@ function fitView(){
   controls.target.copy(c); controls.update();
   if (grid){ scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
   const span = Math.ceil(r*4);
-  grid = new THREE.GridHelper(span, Math.min(100, Math.max(10, Math.round(span/2))), '#b6c0cb', '#ccd4dc');
+  grid = new THREE.GridHelper(span, Math.min(100, Math.max(10, Math.round(span/2))), '#55606b', '#39424b');
   grid.position.set(c.x, box.min.y - r*.02, c.z);
-  grid.material.transparent = true; grid.material.opacity = .55;
+  grid.material.transparent = true; grid.material.opacity = .8;
   scene.add(grid); invalidate();
 }
 function zoomTo(ei){
