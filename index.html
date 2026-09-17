@@ -94,6 +94,8 @@
   #toolbar{position:absolute;top:10px;left:10px;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 20px)}
   #toolbar .btn{background:rgba(44,51,59,.92);color:#d6dde4;border-color:#4b555f}
   #toolbar .btn:hover:not(:disabled){background:#39434e;border-color:#6fa2d8}
+  #rubber{position:absolute;border:1px solid #6fb6ff;background:rgba(76,166,255,.16);pointer-events:none;z-index:5}
+  #toolbar .btn.on{background:#1f5fa9;border-color:#1f5fa9;color:#fff}
   #perf{position:absolute;bottom:10px;left:10px;font-family:var(--mono);font-size:11px;color:#8ea0b0;background:rgba(16,19,23,.6);padding:4px 8px;border-radius:3px;white-space:pre}
   #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:11px;text-align:center;padding:24px;background:rgba(29,34,39,.94)}
   #overlay.hidden{display:none}
@@ -223,7 +225,9 @@
       <button class="btn" id="fitBtn">Вписать</button>
       <button class="btn" id="axisBtn">Ось вверх: Z</button>
       <button class="btn" id="sideBtn">Грани: лицевые</button>
+      <button class="btn" id="boxBtn" title="Выделение рамкой. То же самое — Shift и протянуть мышью">Рамка</button>
     </div>
+    <div id="rubber" hidden></div>
     <div id="perf" hidden></div>
     <div id="overlay">
       <h3>Загрузка</h3>
@@ -588,9 +592,9 @@ const HILITE = [0x4c, 0xa6, 0xff];
 
 /* Жизненный цикл элемента. Порядок важен: индекс хранится в M.status. */
 const STATUS = [
-  {id:'design',    name:'На этапе проектирования', short:'Проектируется', color:'#98a6b4'},
-  {id:'made',      name:'Изготовлен',              short:'Изготовлен',    color:'#e0912f'},
-  {id:'installed', name:'Смонтирован',             short:'Смонтирован',   color:'#3ba55d'},
+  {id:'design',    name:'На этапе проектирования', short:'Проектируется', color:'#4a90d9'},
+  {id:'made',      name:'Изготовлен',              short:'Изготовлен',    color:'#ff9d2e'},
+  {id:'installed', name:'Смонтирован',             short:'Смонтирован',   color:'#3ddc84'},
 ];
 const STATUS_BY_ID = new Map(STATUS.map((s, i) => [s.id, i]));
 
@@ -701,7 +705,7 @@ const M = {
   byType:new Map(), guidMap:new Map(),
   hidden:null, baseCol:null, origCol:null, alphaBase:null, origAlpha:null,
   selected:-1, propIndex:new Map(), tris:0, instances:0, parsedForProps:false,
-  status:null, statusKey:'', lastPsets:undefined,
+  status:null, statusKey:'', lastPsets:undefined, sel:new Set(),
 };
 let needsRender = true, dirty = new Set();
 const invalidate = () => needsRender = true;
@@ -1077,14 +1081,14 @@ function setColor(list, hex){
   const r = Math.round(c.r*255), g = Math.round(c.g*255), b = Math.round(c.b*255);
   for (const ei of list){
     M.baseCol[ei*3]=r; M.baseCol[ei*3+1]=g; M.baseCol[ei*3+2]=b;
-    if (ei !== M.selected) writeColor(ei, r, g, b);
+    if (!M.sel.has(ei)) writeColor(ei, r, g, b);
   }
   flush();
 }
 function resetLook(list){
   for (const ei of list){
     M.baseCol[ei*3]=M.origCol[ei*3]; M.baseCol[ei*3+1]=M.origCol[ei*3+1]; M.baseCol[ei*3+2]=M.origCol[ei*3+2];
-    if (ei !== M.selected) writeColor(ei, M.origCol[ei*3], M.origCol[ei*3+1], M.origCol[ei*3+2]);
+    if (!M.sel.has(ei)) writeColor(ei, M.origCol[ei*3], M.origCol[ei*3+1], M.origCol[ei*3+2]);
     M.alphaBase[ei] = M.origAlpha[ei];
     if (!M.hidden[ei]) writeAlpha(ei, M.origAlpha[ei]);
   }
@@ -1163,7 +1167,7 @@ function reset(){
   M.meshes = []; M.refs = []; M.byType = new Map(); M.guidMap = new Map();
   M.selected = -1; M.tris = 0; M.instances = 0; M.parsedForProps = false;
   M.propIndex = new Map(); pending = []; cacheBytes = 0; propsWaiting = null;
-  M.cacheKey = null; M.label = ''; M.glass = []; M.status = null; M.lastPsets = undefined; M.statusFile = null;
+  M.cacheKey = null; M.label = ''; M.glass = []; M.status = null; M.sel = new Set(); M.lastPsets = undefined; M.statusFile = null;
   document.getElementById('statusBlock').hidden = true;
   document.getElementById('glassField').hidden = true;
   document.getElementById('glassRow').hidden = true;
@@ -1324,14 +1328,68 @@ function zoomTo(ei){
 }
 
 /* ═══════════════════ пикинг ═══════════════════ */
-let down = null;
-canvas.addEventListener('pointerdown', e => down = {x:e.clientX, y:e.clientY});
-canvas.addEventListener('pointerup', e => {
-  if (!down || Math.hypot(e.clientX-down.x, e.clientY-down.y) > 4) return;
-  const r = canvas.getBoundingClientRect();
-  select(pick(e.clientX-r.left, e.clientY-r.top));
+let down = null, dragging = false, boxMode = false;
+const rubber = document.getElementById('rubber');
+
+document.getElementById('boxBtn').onclick = e => {
+  boxMode = !boxMode;
+  e.currentTarget.classList.toggle('on', boxMode);
+  e.currentTarget.textContent = boxMode ? 'Рамка: вкл' : 'Рамка';
+  canvas.style.cursor = boxMode ? 'crosshair' : '';
+};
+function drawRubber(x0, y0, x1, y1){
+  rubber.style.left = Math.min(x0,x1) + 'px';
+  rubber.style.top  = Math.min(y0,y1) + 'px';
+  rubber.style.width  = Math.abs(x1-x0) + 'px';
+  rubber.style.height = Math.abs(y1-y0) + 'px';
+  rubber.hidden = false;
+}
+const local = e => { const r = canvas.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top]; };
+
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  const [lx, ly] = local(e);
+  down = {x:e.clientX, y:e.clientY, lx, ly,
+          box: boxMode || e.shiftKey,
+          add: e.ctrlKey || e.metaKey || e.shiftKey};
+  if (down.box){
+    dragging = true;
+    controls.enabled = false;                 // иначе сцена поедет вслед за мышью
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+    drawRubber(lx, ly, lx, ly);
+  }
 });
-window.addEventListener('keydown', e => { if (e.key === 'Escape') select(-1); });
+canvas.addEventListener('pointermove', e => {
+  if (!dragging || !down) return;
+  const [lx, ly] = local(e);
+  drawRubber(down.lx, down.ly, lx, ly);
+});
+canvas.addEventListener('pointerup', e => {
+  if (!down) return;
+  const [lx, ly] = local(e);
+  const moved = Math.hypot(e.clientX-down.x, e.clientY-down.y);
+  const d = down; down = null;
+
+  if (dragging){
+    dragging = false; controls.enabled = true; rubber.hidden = true;
+    try { canvas.releasePointerCapture(e.pointerId); } catch {}
+    if (moved > 4){
+      const ids = pickRect(d.lx, d.ly, lx, ly);
+      if (ids.length) setSelection(ids, d.add ? 'add' : 'set');
+      else if (!d.add) clearSelection();
+      return;
+    }
+  }
+  if (moved > 4) return;                       // это была орбита
+  const ei = pick(lx, ly);
+  if (ei >= 0) setSelection([ei], d.add ? 'toggle' : 'set');
+  else if (!d.add) clearSelection();
+});
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (boxMode) document.getElementById('boxBtn').click();
+  else clearSelection();
+});
 function pick(px, py){
   if (!M.meshes.length) return -1;
   const dpr = renderer.getPixelRatio();
@@ -1355,28 +1413,95 @@ function pick(px, py){
   return id === 0 ? -1 : id - 1;
 }
 
-/* ═══════════════════ выбор ═══════════════════ */
-function select(ei){
-  if (M.selected >= 0){
-    const p = M.selected;
-    writeColor(p, M.baseCol[p*3], M.baseCol[p*3+1], M.baseCol[p*3+2]);
-    if (!M.hidden[p]) writeAlpha(p, M.alphaBase[p]);
+/* Прямоугольник: рисуем проход идентификаторов в маленькую цель и
+   собираем все встретившиеся значения. Берётся только видимое —
+   то, что закрыто другими элементами, в набор не попадает. */
+function pickRect(x0, y0, x1, y1){
+  if (!M.meshes.length) return [];
+  const dpr = renderer.getPixelRatio();
+  const W = Math.floor(canvas.clientWidth * dpr), H = Math.floor(canvas.clientHeight * dpr);
+  const rx = Math.round(Math.min(x0,x1) * dpr), ry = Math.round(Math.min(y0,y1) * dpr);
+  const rw = Math.max(1, Math.round(Math.abs(x1-x0) * dpr));
+  const rh = Math.max(1, Math.round(Math.abs(y1-y0) * dpr));
+  const k = Math.min(1, 420 / Math.max(rw, rh));
+  const tw = Math.max(1, Math.round(rw * k)), th = Math.max(1, Math.round(rh * k));
+
+  const rt = new THREE.WebGLRenderTarget(tw, th);
+  const buf = new Uint8Array(tw * th * 4);
+  const gridWas = grid && grid.visible; if (grid) grid.visible = false;
+  const boxWas = selBox.visible; selBox.visible = false;
+
+  camera.setViewOffset(W, H, rx, ry, rw, rh);
+  scene.overrideMaterial = pickMat;
+  const prevBg = scene.background; scene.background = null;
+  renderer.setRenderTarget(rt);
+  renderer.setClearColor(0x000000, 1); renderer.clear();
+  renderer.render(scene, camera);
+  renderer.readRenderTargetPixels(rt, 0, 0, tw, th, buf);
+  renderer.setRenderTarget(null);
+  scene.overrideMaterial = null; scene.background = prevBg;
+  camera.clearViewOffset();
+  if (grid) grid.visible = gridWas;
+  selBox.visible = boxWas;
+  rt.dispose(); invalidate();
+
+  const out = new Set();
+  for (let i = 0; i < buf.length; i += 4){
+    const id = buf[i] + buf[i+1]*256 + buf[i+2]*65536;
+    if (id) out.add(id - 1);
   }
-  M.selected = (ei >= 0 && ei < M.nElem) ? ei : -1;
-  if (M.selected >= 0){
-    writeColor(M.selected, HILITE[0], HILITE[1], HILITE[2]);
-    writeAlpha(M.selected, Math.max(M.alphaBase[M.selected], 230));  // подсветку видно всегда
+  return [...out];
+}
+
+/* ═══════════════════ выбор ═══════════════════ */
+const selList = () => [...M.sel];
+
+function paintSel(ei, on){
+  if (on){
+    writeColor(ei, HILITE[0], HILITE[1], HILITE[2]);
+    writeAlpha(ei, Math.max(M.alphaBase[ei], 230));   // подсветку видно даже сквозь стекло
+  } else {
+    writeColor(ei, M.baseCol[ei*3], M.baseCol[ei*3+1], M.baseCol[ei*3+2]);
+    if (!M.hidden[ei]) writeAlpha(ei, M.alphaBase[ei]);
+  }
+}
+
+function clearSelection(){
+  for (const ei of M.sel) paintSel(ei, false);
+  M.sel.clear(); M.selected = -1; selBox.visible = false;
+  flush(); afterSelection();
+}
+
+/* mode: set — заменить набор, add — дополнить, toggle — переключить */
+function setSelection(list, mode){
+  if (!M.nElem) return;
+  if (mode === 'set'){ for (const ei of M.sel) paintSel(ei, false); M.sel.clear(); }
+  let last = -1;
+  for (const ei of list){
+    if (!(ei >= 0 && ei < M.nElem)) continue;
+    if (mode === 'toggle' && M.sel.has(ei)){ M.sel.delete(ei); paintSel(ei, false); }
+    else { if (!M.sel.has(ei)){ M.sel.add(ei); paintSel(ei, true); } last = ei; }
+  }
+  M.selected = M.sel.has(last) ? last : (M.sel.size ? M.sel.values().next().value : -1);
+  if (M.sel.size === 1 && M.selected >= 0){
     const b = M.ebox, i = M.selected;
     selBox.box.set(new THREE.Vector3(b[i*6],b[i*6+1],b[i*6+2]), new THREE.Vector3(b[i*6+3],b[i*6+4],b[i*6+5]));
     selBox.visible = true;
   } else selBox.visible = false;
-  flush();
+  flush(); afterSelection();
+}
+
+const select = ei => ei < 0 ? clearSelection() : setSelection([ei], 'set');
+
+function afterSelection(){
   document.querySelectorAll('.item.sel').forEach(n => n.classList.remove('sel'));
-  const node = document.querySelector(`.item[data-ei="${M.selected}"]`);
-  if (node){ node.classList.add('sel'); node.closest('.cls')?.classList.add('open'); node.scrollIntoView({block:'nearest'}); }
+  if (M.sel.size === 1){
+    const node = document.querySelector(`.item[data-ei="${M.selected}"]`);
+    if (node){ node.classList.add('sel'); node.closest('.cls')?.classList.add('open'); node.scrollIntoView({block:'nearest'}); }
+  }
   if (M.selected < 0){ renderInspector(); return; }
   if (M.propIndex.size) renderInspector(psetsFromIndex(M.selected));
-  else if (M.source && !M.source.isPack) { renderInspector(); requestProps(M.ids[M.selected]); }
+  else if (M.source && !M.source.isPack){ renderInspector(); requestProps(M.ids[M.selected]); }
   else renderInspector([]);
 }
 function psetsFromIndex(ei){
@@ -1418,7 +1543,7 @@ function renderInspector(psets){
     box.appendChild(d); return;
   }
   const ei = M.selected;
-  hint.textContent = M.typeNames[ei];
+  hint.textContent = M.sel.size > 1 ? `Выбрано элементов: ${M.sel.size}` : M.typeNames[ei];
   const head = document.createElement('div'); head.className = 'block';
   const dl = document.createElement('dl'); dl.className = 'kv';
   const add = (k, v, copy) => {
@@ -1435,16 +1560,31 @@ function renderInspector(psets){
   add('GlobalId', M.guids[ei], true); add('ExpressID', String(M.ids[ei]));
   head.appendChild(dl); box.appendChild(head);
 
+  if (M.sel.size > 1){
+    const gb = document.createElement('div'); gb.className = 'block';
+    const t = document.createElement('div');
+    t.style.cssText = 'font-size:12.5px;margin-bottom:8px';
+    t.textContent = `Выбрано ${M.sel.size} элементов — действия ниже применяются ко всем.`;
+    const row = document.createElement('div'); row.className = 'btn-row';
+    row.append(
+      mk('Снять выделение', clearSelection),
+      mk('Изолировать', () => { const l = selList(); setVisible(range(M.nElem), false); setVisible(l, true); resetEyes(); })
+    );
+    gb.append(t, row); box.appendChild(gb);
+  }
+
   if (M.status){
     const sb = document.createElement('div'); sb.className = 'block';
     const sh = document.createElement('h2'); sh.textContent = 'Статус'; sb.appendChild(sh);
     const seg = document.createElement('div'); seg.className = 'seg';
+    const all = selList();
+    const common = all.every(x => M.status[x] === M.status[all[0]]) ? M.status[all[0]] : -1;
     STATUS.forEach((st, k) => {
       const b = document.createElement('button');
       b.textContent = st.short;
       b.title = st.name + '  (клавиша ' + (k+1) + ')';
-      if (M.status[ei] === k){ b.classList.add('on'); b.style.background = st.color; }
-      b.onclick = () => setStatus([ei], k);
+      if (common === k){ b.classList.add('on'); b.style.background = st.color; }
+      b.onclick = () => setStatus(all, k);
       seg.appendChild(b);
     });
     sb.appendChild(seg);
@@ -1465,19 +1605,19 @@ function renderInspector(psets){
   const row = document.createElement('div'); row.className = 'row';
   const pk = document.createElement('input'); pk.type = 'color'; pk.className = 'swatch';
   pk.style.width = '28px'; pk.style.height = '24px'; pk.value = hex(M.baseCol, ei);
-  pk.oninput = () => setColor([ei], pk.value);
+  pk.oninput = () => setColor(selList(), pk.value);
   const lab = document.createElement('span'); lab.textContent = 'Цвет элемента'; lab.style.fontSize = '12px';
   row.append(pk, lab); ctrl.appendChild(row);
   const fl = document.createElement('label'); fl.className = 'field'; fl.style.marginTop = '10px';
   const sp = document.createElement('span'); const rg = document.createElement('input');
   rg.type = 'range'; rg.min = '5'; rg.max = '100'; rg.value = String(Math.round(M.alphaBase[ei]/2.55));
   sp.textContent = `Непрозрачность — ${rg.value}%`;
-  rg.oninput = () => { sp.textContent = `Непрозрачность — ${rg.value}%`; setAlpha([ei], rg.value/100); };
+  rg.oninput = () => { sp.textContent = `Непрозрачность — ${rg.value}%`; setAlpha(selList(), rg.value/100); };
   fl.append(sp, rg); ctrl.appendChild(fl);
   const btns = document.createElement('div'); btns.className = 'btn-row';
   btns.append(
     mk('Так же весь класс', () => { setColor(M.byType.get(M.typeNames[ei]), pk.value); renderTree(); }),
-    mk('Исходный вид', () => { resetLook([ei]); renderInspector(psets); })
+    mk('Исходный вид', () => { resetLook(selList()); renderInspector(psets); })
   );
   ctrl.appendChild(btns); box.appendChild(ctrl);
 
@@ -1727,7 +1867,7 @@ function paintBase(){
   } else {
     for (let ei = 0; ei < M.nElem; ei++){
       M.baseCol[ei*3]=M.origCol[ei*3]; M.baseCol[ei*3+1]=M.origCol[ei*3+1]; M.baseCol[ei*3+2]=M.origCol[ei*3+2];
-      if (ei !== M.selected) writeColor(ei, M.origCol[ei*3], M.origCol[ei*3+1], M.origCol[ei*3+2]);
+      if (!M.sel.has(ei)) writeColor(ei, M.origCol[ei*3], M.origCol[ei*3+1], M.origCol[ei*3+2]);
     }
     flush();
   }
@@ -1786,17 +1926,17 @@ window.addEventListener('keydown', e => {
   if (M.selected < 0 || e.ctrlKey || e.altKey || e.metaKey) return;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   const k = '123'.indexOf(e.key);
-  if (k >= 0) setStatus([M.selected], k);
+  if (k >= 0) setStatus(selList(), k);
 });
 
 /* ═══════════════════ вид ═══════════════════ */
 document.getElementById('isolateBtn').onclick = () => {
   if (M.selected < 0) return;
-  setVisible(range(M.nElem), false); setVisible([M.selected], true); resetEyes();
+  setVisible(range(M.nElem), false); setVisible(selList(), true); resetEyes();
 };
 document.getElementById('ghostBtn').onclick = () => {
   if (M.selected < 0) return;
-  for (let i = 0; i < M.nElem; i++) if (i !== M.selected && !M.hidden[i]) writeAlpha(i, 40);
+  for (let i = 0; i < M.nElem; i++) if (!M.sel.has(i) && !M.hidden[i]) writeAlpha(i, 40);
   flush();
 };
 document.getElementById('showAllBtn').onclick = () => {
@@ -1810,7 +1950,7 @@ function applyGlass(){
   document.getElementById('glassLabel').textContent = `Полупрозрачные — ${pct}%`;
   for (const ei of M.glass){
     M.alphaBase[ei] = v;
-    if (!M.hidden[ei] && ei !== M.selected) writeAlpha(ei, v);
+    if (!M.hidden[ei] && !M.sel.has(ei)) writeAlpha(ei, v);
   }
   flush();
   document.getElementById('opaqueBtn').textContent =
